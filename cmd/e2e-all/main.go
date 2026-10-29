@@ -168,6 +168,9 @@ func main() {
 		{"gh-repo-rename", r.stepRepoRename},
 		{"gh-tag-delete", r.stepTagDelete},
 		{"gh-repo-delete", r.stepRepoDelete},
+		// THE WAY BACK OUT for the branch this run pushed: without it every run leaves one behind, and
+		// they accumulate until a later run collides with a name that is still there.
+		{"git-branch-delete", r.stepBranchDelete},
 	}
 
 	r.steps = steps

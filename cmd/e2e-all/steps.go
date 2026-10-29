@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -126,9 +128,13 @@ func (r *runner) stepMirrorSync(st *state) error {
 
 // stepBranchCreate makes a working branch that a patch can land on.
 func (r *runner) stepBranchCreate(st *state) error {
-	// A name built from the clock, so a re-run on the same repository does not collide with the
-	// branch the previous run left behind.
-	st.Branch = fmt.Sprintf("e2e/%d", time.Now().Unix())
+	// UNIQUE ACROSS RUNS, and the clock alone was not enough: two runs in the same second produced the
+	// same name, and a branch the PREVIOUS run pushed to the upstream is one the next one cannot push
+	// again — "cannot lock ref: reference already exists" — nor open a pull request against.
+	//
+	// Nanoseconds plus four random bytes. The clock stops collisions within a run and the random part
+	// stops them across runs and across machines, which is the pair of properties that matters.
+	st.Branch = fmt.Sprintf("e2e/%d-%s", time.Now().UnixNano(), randHex(4))
 	_, err := r.must("git-branch-create", "git-branch-create", map[string]any{
 		"remote": r.mirrorRemote(), "branch": st.Branch, "from": "main",
 		// The suite runs repeatedly; a branch that already exists must be reused rather than
@@ -817,6 +823,35 @@ func (r *runner) stepRepoDelete(st *state) error {
 	return lastErr
 }
 
+/**
+ * stepBranchDelete removes the branch this run pushed.
+ *
+ * IT RUNS LAST, and it is the reason the suite can be run twice: a branch pushed to the upstream stays
+ * there, and a later run that happened to pick the same name was refused with "cannot lock ref:
+ * reference already exists" — a failure about the previous run, not about this one.
+ *
+ * THE CONFIRM ARGUMENT IS THE BRANCH'S NAME, like gh-repo-delete: deletion is not reversible from here.
+ */
+func (r *runner) stepBranchDelete(st *state) error {
+	if st.Branch == "" {
+		r.skip("git-branch-delete", "this run created no branch")
+		return nil
+	}
+	_, err := r.must("git-branch-delete", "git-branch-delete", map[string]any{
+		"remote":   r.mirrorRemote(),
+		"branch":   st.Branch,
+		"upstream": fmt.Sprintf("https://github.com/%s.git", r.repo),
+		"confirm":  st.Branch,
+	})
+	if err != nil {
+		return err
+	}
+	// Cleared so a later tidy-up cannot try to delete it twice.
+	st.Branch = ""
+	r.ok("git-branch-delete")
+	return nil
+}
+
 // owner is the GitHub owner of the repository under test.
 func (r *runner) owner() string {
 	o, _, _ := strings.Cut(r.repo, "/")
@@ -830,4 +865,15 @@ func (r *runner) owner() string {
 // This is also what a caller does — a remote is an address.
 func (r *runner) mirrorRemote() string {
 	return fmt.Sprintf("%s/%s.git", r.forgeBase, r.mirror)
+}
+
+// randHex is n random bytes as hex: enough to tell two runs apart, short enough to read in a branch
+// name.
+func randHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		// The clock already makes it unlikely; a failed read must not fail the step.
+		return fmt.Sprintf("%x", time.Now().UnixNano()%0xffff)
+	}
+	return hex.EncodeToString(b)
 }

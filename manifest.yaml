@@ -335,6 +335,45 @@ tools:
             zh: "目标分支名（默认：同名）。保持固定可让重复推送更新同一个 PR。"
       required: [remote, branch, upstream]
     required_config: [servers]
+  - name: git-branch-delete
+    description: >-
+      Delete ONE branch from the upstream. This is the way back out: a branch pushed
+      for review is a branch somebody must be able to remove when the change is
+      merged or abandoned.
+      It acts on the UPSTREAM, not on the mirror — the mirror's branches are its
+      working state, managed by git-branch-create.
+      The default branch is refused, because removing it takes the repository's
+      default away from every clone.
+    descriptions:
+      zh: >-
+        从上游删除**一个**分支。这是退路：为评审推出的分支，在合并或放弃之后必须有办法删掉。
+        作用于**上游**而非镜像——镜像的分支是它的工作状态，由 git-branch-create 管理。
+        拒绝删除默认分支：删掉它等于让每个克隆都失去默认分支。
+    input_schema:
+      type: object
+      properties:
+        remote:
+          type: string
+          description: "Local repository URL (the mirror). It selects which forge configuration applies."
+          descriptions:
+            zh: "本地仓库地址（镜像）。用于选定哪一份 forge 配置。"
+        branch:
+          type: string
+          description: "Branch to delete on the upstream."
+          descriptions:
+            zh: "要在上游删除的分支。"
+        upstream:
+          type: string
+          description: "Git URL the branch lives in, e.g. https://github.com/owner/repo.git"
+          descriptions:
+            zh: "分支所在的目标地址，如 https://github.com/owner/repo.git"
+        confirm:
+          type: string
+          description: "The branch name again. Deletion is not reversible from here, and a caller who cannot name it has not decided to."
+          descriptions:
+            zh: "再次填写分支名。删除在此不可逆，写不出名字就说明还没决定。"
+      required: [remote, branch, upstream, confirm]
+    required_config: [servers]
   - name: git-sync-upstream
     description: >-
       Fast-forward a branch to its same-named branch on the upstream. FOR

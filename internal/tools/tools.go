@@ -113,6 +113,9 @@ func Registry(d Deps) map[string]Handler {
 		"git-file-read":     t.fileRead,
 		"git-file-list":     t.fileList,
 		"git-push-branch":   t.pushBranch,
+		// The way BACK out: a branch pushed for review is a branch somebody has to be able to remove,
+		// and until this existed the suite's own tidy-up had to go around the extension to do it.
+		"git-branch-delete": t.branchDelete,
 
 		// GITHUB PLATFORM. Repository metadata, account, releases, packages.
 		"gh-info":     t.info,
