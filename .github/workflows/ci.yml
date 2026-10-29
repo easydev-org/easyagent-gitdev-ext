@@ -242,12 +242,13 @@ jobs:
         env:
           # The mirror this run just made, not a deployment someone configured by hand.
           #
-          # `FORGE` IS THE COMPOSE SERVICE NAME, NOT localhost. The extension runs in a container, so
-          # 127.0.0.1 there is the extension itself — a mistake that would make every git-* tool
-          # report "cannot parse a host" or connect to nothing. The bootstrap step, running on the
-          # runner, uses the PUBLISHED port and is a different address for the same server.
+          # 127.0.0.1, BECAUSE THE EXTENSION NOW RUNS ON THE RUNNER rather than in the compose network.
+          # `forge` — the service name — resolves only INSIDE containers, and using it here made every
+          # git-* tool fail with `lookup forge on 127.0.0.53:53: server misbehaving`: a DNS error that
+          # names nothing about the actual mistake. The forge's port is published to the runner, so the
+          # address is the loopback one.
           E2E_SERVERS: >-
-            [{"host":"forge","kind":"gitea","api_url":"http://forge:3000",
+            [{"host":"127.0.0.1","kind":"gitea","api_url":"http://127.0.0.1:3000",
               "token":"${{ steps.forge.outputs.E2E_FORGE_TOKEN }}"}]
           GH_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
           # The watcher needs a repository to follow. Without it the extension starts its release
@@ -261,11 +262,11 @@ jobs:
           # by the bootstrap step, because a mirror of easydev-org/x lives at <forge-account>/x and
           # that name cannot be derived from the upstream's.
           GH_E2E_MIRROR: ${{ steps.forge.outputs.E2E_MIRROR_REPO }}
-          # THE ADDRESS THE TOOLS ARE GIVEN, which is the one the EXTENSION resolves — `forge`, the
-          # compose service name. The tools build a remote URL from this and the extension matches it
-          # against its `servers` table, so the two have to be the same string. The bootstrap step's
-          # own E2E_FORGE_URL is the runner's view of the same server and is not interchangeable.
-          GH_E2E_FORGE: http://forge:3000
+          # THE ADDRESS THE TOOLS ARE GIVEN. It has to be the SAME STRING the extension has in its
+          # `servers` table above, because the tools build a remote URL from it and the extension
+          # matches that URL's host against what it was configured with. Both are now the loopback
+          # address, for the reason given beside E2E_SERVERS.
+          GH_E2E_FORGE: http://127.0.0.1:3000
           # A repository that HAS workflow runs, so the CI tools are verified rather than skipped.
           GH_E2E_CI_REPO: easydev-org/easyagent-gitdev-ext
           GH_E2E_REPO: easydev-org/test
