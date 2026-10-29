@@ -141,7 +141,10 @@ jobs:
     # has no access to the secrets it needs anyway — a job that would always fail to authenticate is
     # a job that teaches people to ignore red builds.
     if: github.event_name != 'pull_request'
-    timeout-minutes: 30
+    # FORTY-FIVE, not thirty. Seven steps move a whole branch between two servers, each bounded at two
+    # minutes when a host is unreachable — and a cancelled run reports nothing, which is worse than a
+    # slow one.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

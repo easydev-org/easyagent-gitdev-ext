@@ -184,9 +184,16 @@ func main() {
 			r.skip(s.name, "no GitHub credential in this deployment")
 			continue
 		}
+		// A LINE BEFORE AND AFTER, so a run that is killed still shows WHERE it was. Printing only at
+		// the end means a cancelled run leaves nothing behind, which is what happened: thirty minutes,
+		// no output, and no way to tell a hung call from a slow one.
+		fmt.Printf("--> %s\n", s.name)
+		started := time.Now()
 		if err := s.fn(st); err != nil {
 			r.fail(s.name, err)
+			continue
 		}
+		fmt.Printf("<-- %s (%s)\n", s.name, time.Since(started).Round(time.Millisecond))
 	}
 	r.summary()
 }
