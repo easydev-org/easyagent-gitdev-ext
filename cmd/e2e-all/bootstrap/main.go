@@ -74,7 +74,10 @@ func main() {
 	// has "no history in common with main", which is what GitHub said when the pull request was opened.
 	// forge.Establish is the code that already knows this: create with a commit, then FORCE the
 	// upstream's branch over it.
-	fc, err := forge.NewForHost(*base+"/api/v1", token)
+	// THE BASE URL, WITHOUT /api/v1. NewForHost appends the API prefix itself (gitea.NewClient does
+	// too), so passing the API base produced /api/v1/api/v1 and a 404 from a client that had been
+	// given a valid server.
+	fc, err := forge.NewForHost(*base, token)
 	if err != nil {
 		fatalf("forge client: %v", err)
 	}
