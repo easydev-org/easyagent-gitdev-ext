@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"strconv"
 	"flag"
 	"fmt"
 	"os"
@@ -100,7 +101,7 @@ func main() {
 	r := &runner{
 		ctx: ctx, a: a, extID: *extID, tenant: *tenant, session: *session,
 		repo: *repo, ciRepo: *ciRepo, mirror: *mirror, forgeBase: strings.TrimRight(*forge, "/"),
-		only: *only, verbose: *verbose, skipGitHub: *skipGH,
+		only: *only, verbose: *verbose, skipGitHub: *skipGH, selfRunID: selfRun(),
 	}
 	st := &state{Repo: *repo, Mirror: *mirror}
 
@@ -196,6 +197,15 @@ func main() {
 		fmt.Printf("<-- %s (%s)\n", s.name, time.Since(started).Round(time.Millisecond))
 	}
 	r.summary()
+}
+
+// selfRun is the CI run this process is executing inside, or 0 when it is not in CI.
+//
+// Read from the environment rather than passed as a flag: the value is a property of WHERE the suite
+// runs, and a caller who forgot to pass it would silently re-arm the bug it prevents.
+func selfRun() int64 {
+	n, _ := strconv.ParseInt(os.Getenv("GITHUB_RUN_ID"), 10, 64)
+	return n
 }
 
 func envOr(k, d string) string {

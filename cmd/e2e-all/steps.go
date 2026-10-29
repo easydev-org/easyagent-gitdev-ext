@@ -573,6 +573,11 @@ func (r *runner) findRunning(st *state) (int64, bool) {
 		if status == "" {
 			status = str(run, "status")
 		}
+		// NOT THIS RUN. Aiming a cancel at the CI that is executing the test kills the test, and the
+		// failure reads as a product defect.
+		if id == r.selfRunID {
+			continue
+		}
 		if id != 0 && (status == "in_progress" || status == "queued") {
 			return id, true
 		}
@@ -615,6 +620,10 @@ func (r *runner) findCompleted(st *state) (int64, bool) {
 		status := str(run, "Status")
 		if status == "" {
 			status = str(run, "status")
+		}
+		// NOT THIS RUN, for the same reason as findRunning: a rerun aimed at the suite kills the suite.
+		if id == r.selfRunID {
+			continue
 		}
 		if id != 0 && status == "completed" {
 			return id, true

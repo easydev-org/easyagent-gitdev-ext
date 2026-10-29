@@ -32,6 +32,14 @@ type runner struct {
 	verbose    bool
 	skipGitHub bool
 
+	// selfRunID is the CI run THIS SUITE is executing in, when there is one.
+	//
+	// THE SUITE MUST NOT TOUCH IT. The CI tools are exercised against a real repository, and that
+	// repository is often the one running the suite — so a cancel or rerun aimed at 'the first active
+	// run' aimed at ITSELF. It did: the job died with 'the operation was canceled' thirty seconds
+	// into the GitHub half, which reads like a product failure and was the test shooting its own foot.
+	selfRunID int64
+
 	// artifactID is carried from the listing step to the download step: the second needs an id the
 	// first discovered, and re-listing to find it again would be a second call for one fact.
 	artifactID int64
