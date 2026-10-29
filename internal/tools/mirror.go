@@ -119,10 +119,7 @@ func (t *toolset) branchCreate(ctx context.Context, args map[string]any, session
 	var commit string
 	var srcDesc string
 	if wantsUpstream {
-		upTok := ""
-		if srv, ok := cfg.ServerForHost(hostOf(upstreamURL)); ok {
-			upTok = srv.Token
-		}
+		upTok := upstreamToken(cfg, upstreamURL)
 		sha, cerr := cl.CreateBranchFromUpstream(ctx, branch, upstreamURL, upstreamBranch, upTok)
 		if cerr != nil {
 			return extension.ToolResultData{}, &extension.TypedError{
@@ -309,10 +306,7 @@ func (t *toolset) syncUpstream(ctx context.Context, args map[string]any, session
 	}
 	// The upstream's credential comes from the same `servers` table, keyed by host: a repository
 	// mirrored from GitHub needs the GitHub entry's token, not the local forge's.
-	upTok := ""
-	if srv, ok := cfg.ServerForHost(hostOf(upstream)); ok {
-		upTok = srv.Token
-	}
+	upTok := upstreamToken(cfg, upstream)
 
 	moved, local, up, serr := cl.SyncUpstream(ctx, branch, upstream, upTok)
 	if serr != nil {
@@ -353,10 +347,10 @@ func (t *toolset) pushBranch(ctx context.Context, args map[string]any, session, 
 	if err != nil {
 		return extension.ToolResultData{}, err
 	}
-	upTok := ""
-	if srv, ok := cfg.ServerForHost(hostOf(upstream)); ok {
-		upTok = srv.Token
-	}
+	// THE UPSTREAM'S CREDENTIAL IS NOT NECESSARILY IN `servers`: that table describes the MIRROR. A
+	// deployment configures GitHub under `token`, so looking only in `servers` sent this push out
+	// anonymous and GitHub refused it.
+	upTok := upstreamToken(cfg, upstream)
 	sha, perr := cl.PushBranch(ctx, branch, upstream, to, upTok)
 	if perr != nil {
 		return extension.ToolResultData{}, &extension.TypedError{
@@ -386,3 +380,19 @@ func short(s string) string {
 
 // hostOf is the hostname of a git URL, for looking up the right server entry.
 func hostOf(raw string) string { return forgeconfig.HostOf(raw) }
+
+/**
+ * upstreamToken picks the credential for a URL that is NOT the mirror.
+ *
+ * TWO SOURCES, IN ORDER, because a deployment configures them separately: `servers` describes the
+ * MIRROR hosts this extension writes to, and `token` is the GitHub credential it reads and pushes
+ * through. An upstream URL is almost never in `servers` — GitHub is not a mirror — so looking only
+ * there found nothing and the push went out ANONYMOUS, which GitHub refuses with "no anonymous write
+ * access". A host that IS listed still wins, so a deployment that lists its upstream keeps working.
+ */
+func upstreamToken(cfg forgeconfig.Config, upstream string) string {
+	if srv, ok := cfg.ServerForHost(hostOf(upstream)); ok {
+		return srv.Token
+	}
+	return cfg.UpstreamToken
+}

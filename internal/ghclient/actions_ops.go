@@ -28,17 +28,18 @@ func readAllLimited(r io.Reader, limit int64) ([]byte, error) {
 
 // Artifact is one uploaded artifact.
 type Artifact struct {
-	ID      int64
-	Name    string
-	Size    int64
-	Expired bool
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Size    int64  `json:"size"`
+	Expired bool   `json:"expired"`
 	// Digest is the SHA256 of the archive, set for uploads from upload-artifact v4 on. Empty for
 	// older ones, which is why it is not used as an identity.
-	Digest    string
-	CreatedAt string
-	ExpiresAt string
-	// DownloadURL is the API redirect; the archive is fetched through it.
-	DownloadURL string
+	Digest    string `json:"digest"`
+	CreatedAt string `json:"createdAt"`
+	ExpiresAt string `json:"expiresAt"`
+	// DownloadURL is the API redirect; the archive is fetched through it. json:"-" because it is a
+	// CREDENTIAL-adjacent redirect target, not a fact about the artifact.
+	DownloadURL string `json:"-"`
 }
 
 // ListArtifacts lists the artifacts of one run. Paged.

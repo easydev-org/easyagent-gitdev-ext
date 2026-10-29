@@ -22,6 +22,10 @@ import (
 // Knob names — the single source of truth for the manifest + readers.
 const (
 	KnobServers       = "servers"
+	// KnobToken is the GITHUB credential — the UPSTREAM, not the mirror. It is a separate knob
+	// because a deployment writes to one host and reads from another, and the two have different
+	// credentials.
+	KnobToken         = "token"
 	KnobGitProtocol   = "git-protocol"
 	KnobDefaultBranch = "default-branch"
 	KnobRequireAuth   = "require-auth"
@@ -143,6 +147,14 @@ type Config struct {
 	GitProtocol   string // "https" (default) | "ssh"
 	DefaultBranch string // "main" (default)
 	RequireAuth   bool
+	// UpstreamToken authenticates against a host that is NOT in `servers`.
+	//
+	// WHY IT IS SEPARATE FROM `Servers`: the mirror is a local forge the extension writes to, and the
+	// upstream is GitHub, which it only READS (and pushes branches to). Deployments configure those
+	// with different knobs — `servers` for the mirror, `token` for GitHub — so looking a GitHub URL up
+	// in `servers` finds nothing and the push goes out anonymous. That is what happened: a branch
+	// reached the forge and was refused by GitHub with "no anonymous write access".
+	UpstreamToken string
 }
 
 // Parse builds a Config from the raw knob values (as read from extension
@@ -156,6 +168,7 @@ func Parse(get func(name string) string) (Config, error) {
 	c := Config{
 		Sandboxes:     ParseSandboxes(get(KnobSandboxes)),
 		Servers:       servers,
+		UpstreamToken: strings.TrimSpace(get(KnobToken)),
 		GitProtocol:   orDefault(get(KnobGitProtocol), "https"),
 		DefaultBranch: orDefault(get(KnobDefaultBranch), "main"),
 		RequireAuth:   get(KnobRequireAuth) == "true",

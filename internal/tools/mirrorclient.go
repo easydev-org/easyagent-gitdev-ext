@@ -64,12 +64,19 @@ func (t *toolset) forgeCfg(session, tenant string) forgeconfig.Config {
 	if t.deps.GetConfig == nil {
 		return forgeconfig.Config{}
 	}
-	raw, _ := t.deps.GetConfig("servers", session, tenant).(string)
-	servers, err := forgeconfig.ParseServers(raw)
+	// Parse, not just the server list: this Config is what the upstream calls read their CREDENTIAL
+	// from, and the GitHub token lives under `token` rather than in `servers`. Building the struct by
+	// hand here left UpstreamToken empty, so every push to an upstream went out anonymous — a bug
+	// that only shows up when the mirror and the upstream are different hosts, which is the normal
+	// deployment.
+	cfg, err := forgeconfig.Parse(func(name string) string {
+		raw, _ := t.deps.GetConfig(name, session, tenant).(string)
+		return raw
+	})
 	if err != nil {
-		// A malformed list is reported by the tools that need it, not here: this function is also
+		// A malformed value is reported by the tools that need it, not here: this function is also
 		// used to decide whether the mirror is configured at all.
 		return forgeconfig.Config{}
 	}
-	return forgeconfig.Config{Servers: servers}
+	return cfg
 }

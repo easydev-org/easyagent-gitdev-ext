@@ -59,14 +59,7 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=build /out/gitdev-ext /app/gitdev-ext
 
-# Workspaces are git checkouts on this pod's LOCAL disk. No database, no volume:
-#
-#   - a checkout is a session's private scratchpad, so a shared volume would let two pods fight
-#     over one index;
-#   - losing them on restart is acceptable and arguably correct — a stale checkout of a branch
-#     that has moved is worse than no checkout, because it looks usable.
-#
-# WORKSPACE_IDLE_TTL means an abandoned checkout does not accumulate until the disk fills.
-ENV WORKSPACE_ROOT=/tmp/workspaces
-ENV WORKSPACE_IDLE_TTL=2h
+# NO WORKSPACE AND NO VOLUME. There is nothing on this container's disk worth keeping: a change is
+# made through the forge's API, so a branch is a ref on the server rather than a directory here, and
+# a restart loses only what could be recomputed anyway.
 ENTRYPOINT ["/app/gitdev-ext"]

@@ -113,6 +113,37 @@ served in place of the real one and looks like "the UI is wrong" rather than "th
 
 ### Live tests
 
+There are TWO live suites, and they answer different questions.
+
+**`go test ./internal/tools -run TestE2E`** calls `Registry` directly. It proves the handlers work,
+and says nothing about whether the extension would ever be ASKED: registration, permissions, argument
+deserialisation and reply serialisation all live outside the handler.
+
+**`cmd/e2e-all`** starts the extension on a real NATS (`docker compose -f .github/ci/compose.yaml up
+-d --build`) and drives every registered tool over the bus. It runs in dependency order — branch,
+then patch, then push, then pull request — so a failure points at the step that broke rather than at
+"the suite", and every write is read back through a DIFFERENT tool.
+
+```sh
+# the configuration the extension reads, written before it starts
+go run ./cmd/e2e-all/seed -nats nats://127.0.0.1:4222
+
+# every tool, through the bus
+GH_E2E_REPO=owner/name GH_E2E_MIRROR=forgeowner/name GH_E2E_FORGE=https://forge.example \
+  go run ./cmd/e2e-all -nats nats://127.0.0.1:4222
+```
+
+It reports `passed / skipped / failed` and exits non-zero only on a failure: a skip is a tool the
+deployment had nothing to exercise (a repository with no CI, an artifact nothing uploaded), and it is
+named rather than silently counted as a pass.
+
+**Writing this suite found three real bugs**, none of which any unit test could see: a GitHub
+credential that never reached a push (it was looked up in the mirror's server table), five structs
+with no JSON tags whose fields the panel read as `undefined`, and a `Config` assembled by hand that
+dropped the field carrying that credential.
+
+### The older, narrower live tests
+
 The suite in `internal/forge` and `internal/ghclient` runs against real hosts when pointed at them:
 
 ```sh

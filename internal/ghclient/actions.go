@@ -22,10 +22,12 @@ import (
 
 // Workflow is one Actions workflow defined in the repository.
 type Workflow struct {
-	ID    int64
-	Name  string
-	Path  string // .github/workflows/ci.yml
-	State string // active | disabled_manually | ...
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	// .github/workflows/ci.yml
+	Path string `json:"path"`
+	// active | disabled_manually | ...
+	State string `json:"state"`
 }
 
 // ListWorkflows lists the repository's workflows. Paged.
@@ -50,17 +52,20 @@ func (c *Client) ListWorkflows(ctx context.Context) ([]Workflow, error) {
 
 // Run is one execution of a workflow.
 type Run struct {
-	ID         int64
-	Name       string
-	Status     string // queued | in_progress | completed
-	Conclusion string // success | failure | cancelled | ... (empty while running)
-	Branch     string
-	Event      string // push | pull_request | workflow_dispatch | ...
-	HeadSHA    string
-	URL        string
-	CreatedAt  string
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	// queued | in_progress | completed
+	Status string `json:"status"`
+	// success | failure | cancelled | ... (empty while running)
+	Conclusion string `json:"conclusion"`
+	Branch     string `json:"branch"`
+	// push | pull_request | workflow_dispatch | ...
+	Event     string `json:"event"`
+	HeadSHA   string `json:"headSha"`
+	URL       string `json:"url"`
+	CreatedAt string `json:"createdAt"`
 	// Attempt distinguishes a re-run of the same workflow at the same sha.
-	Attempt int
+	Attempt int `json:"attempt"`
 }
 
 // ListRunsOptions filters the run list.
@@ -119,24 +124,24 @@ func runFromG(r *gogithub.WorkflowRun) Run {
 
 // Step is one step in a job.
 type Step struct {
-	Number     int64
-	Name       string
-	Status     string
-	Conclusion string
+	Number     int64  `json:"number"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
 	// StartedAt / CompletedAt are empty until the step begins / ends.
-	StartedAt   string
-	CompletedAt string
+	StartedAt   string `json:"startedAt"`
+	CompletedAt string `json:"completedAt"`
 }
 
 // Job is one job in a run.
 type Job struct {
-	ID         int64
-	Name       string
-	Status     string
-	Conclusion string
-	StartedAt  string
-	Steps      []Step
-	URL        string
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	StartedAt  string `json:"startedAt"`
+	Steps      []Step `json:"steps"`
+	URL        string `json:"url"`
 }
 
 /**

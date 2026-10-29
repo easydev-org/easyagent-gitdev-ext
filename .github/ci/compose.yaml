@@ -20,3 +20,31 @@ services:
       timeout: 3s
       retries: 30
       start_period: 3s
+
+  # THE EXTENSION ITSELF, built from this checkout.
+  #
+  # This is what makes the suite END TO END rather than a handler test: the tools are called over the
+  # bus, through registration, permissions and reply serialisation — the parts a direct call to
+  # Registry never touches. Building the image here (rather than pulling a published one) also means
+  # the suite tests the commit under review.
+  gitdev:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: ci-gitdev
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      NATS_URL: nats://nats:4222
+      # The extension publishes release events on this channel; nothing in the suite subscribes, but
+      # the watcher must start without a repository configured.
+      GITDEV_LOG_LEVEL: info
+    healthcheck:
+      # The HTTP port the panel listens on. It answers only once the extension has REGISTERED, so a
+      # healthy probe means the tools are on the bus and callable.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/api/v1/version || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
