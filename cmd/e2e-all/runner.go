@@ -65,6 +65,12 @@ func (r *runner) call(tool string, args map[string]any) (result, error) {
 	if args == nil {
 		args = map[string]any{}
 	}
+	// EVERY CALL GETS ITS OWN DEADLINE. Sharing the suite's overall context means one tool that hangs
+	// — a push to a host this container cannot reach, say — consumes the whole budget and the run is
+	// cancelled with no result at all. A per-call ceiling turns that into one failed step with a
+	// message, which is the difference between a diagnosable run and an empty one.
+	ctx, cancel := context.WithTimeout(r.ctx, perCallTimeout)
+	defer cancel()
 	// THE GRANTS ARE THE POINT of testing through the bus: a tool whose permission the caller does
 	// not hold is refused by the EXTENSION, not by the handler, so a grant that is wrong shows up
 	// here and nowhere in a direct handler test.
@@ -79,7 +85,7 @@ func (r *runner) call(tool string, args map[string]any) (result, error) {
 		{Key: "github.repo", Params: bus.Struct(map[string]any{"repo": r.owner() + "/*"})},
 		{Key: "org.admin", Params: bus.Struct(map[string]any{"org": r.owner()})},
 	}
-	tr, err := r.a.CallToolWithGrants(r.ctx, r.tenant, r.session, r.extID, tool,
+	tr, err := r.a.CallToolWithGrants(ctx, r.tenant, r.session, r.extID, tool,
 		fmt.Sprintf("e2e-%s-%d", tool, time.Now().UnixNano()), args, grants)
 	if err != nil {
 		return result{}, fmt.Errorf("transport: %w", err)
@@ -102,6 +108,13 @@ func (r *runner) call(tool string, args map[string]any) (result, error) {
 	}
 	return out, nil
 }
+
+// perCallTimeout bounds one tool call.
+//
+// TWO MINUTES: a git fetch of a large repository over a slow link is the slowest thing here, and
+// anything past this is a tool talking to a host it cannot reach. Without a bound the suite's own
+// deadline is the only limit, and it ends the RUN rather than the STEP.
+const perCallTimeout = 2 * time.Minute
 
 // must calls a tool and fails the step on a tool error.
 func (r *runner) must(step, tool string, args map[string]any) (result, error) {
