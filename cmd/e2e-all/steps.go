@@ -784,17 +784,28 @@ func (r *runner) stepRepoDelete(st *state) error {
 		return nil
 	}
 	slug := r.owner() + "/" + name
-	_, err := r.must("gh-repo-delete", "gh-repo-delete", map[string]any{
-		// `confirm` IS THE REPOSITORY'S OWN NAME, not "true". Typing the name is the point: a
-		// destructive call that accepts a boolean can be issued by a caller that did not stop to
-		// think about which repository it was pointing at.
-		"repo": slug, "confirm": slug,
-	})
-	if err != nil {
-		return err
+	// THE SAME ASYNCHRONY THE RENAME HIT: GitHub refuses a write against a repository whose previous
+	// operation has not settled, with 409 "a conflicting repository operation is still in progress".
+	// Retried for the same reason, and only on that message — anything else is a real answer.
+	var lastErr error
+	for attempt := 0; attempt < 8; attempt++ {
+		_, err := r.must("gh-repo-delete", "gh-repo-delete", map[string]any{
+			// `confirm` IS THE REPOSITORY'S OWN NAME, not "true". Typing the name is the point: a
+			// destructive call that accepts a boolean can be issued by a caller that did not stop to
+			// think about which repository it was pointing at.
+			"repo": slug, "confirm": slug,
+		})
+		if err == nil {
+			r.ok("gh-repo-delete")
+			return nil
+		}
+		lastErr = err
+		if !strings.Contains(err.Error(), "still in progress") {
+			return err
+		}
+		time.Sleep(4 * time.Second)
 	}
-	r.ok("gh-repo-delete")
-	return nil
+	return lastErr
 }
 
 // owner is the GitHub owner of the repository under test.

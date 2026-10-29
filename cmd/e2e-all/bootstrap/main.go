@@ -104,8 +104,17 @@ func createToken(ctx context.Context, base, user, password string) (string, erro
 }
 
 // createRepo makes the repository the mirror tools will write to.
+//
+// WITH AN INITIAL COMMIT, and that is not decoration: a Forgejo repository created empty is REAL and
+// answers 200, but its branch API answers "Git Repository is empty" and the contents API refuses every
+// write. Every mirror tool starts by writing, so an empty repository is a dead end that looks alive —
+// and it produced twelve failed steps the one time this was left false.
 func createRepo(ctx context.Context, base, token, name string) error {
-	body, _ := json.Marshal(map[string]any{"name": name, "auto_init": false, "private": false})
+	body, _ := json.Marshal(map[string]any{
+		"name":      name,
+		"auto_init": true,
+		"private":   false,
+	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		strings.TrimRight(base, "/")+"/api/v1/user/repos", bytes.NewReader(body))
 	if err != nil {
