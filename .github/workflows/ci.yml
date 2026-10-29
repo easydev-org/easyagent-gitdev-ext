@@ -155,7 +155,7 @@ jobs:
       - name: wait for both to be healthy
         run: |
           set -uo pipefail
-          for svc in ci-nats ci-gitdev; do
+          for svc in ci-nats ci-forge ci-gitdev; do
             ok=0
             for i in $(seq 1 90); do
               status="$(docker inspect -f '{{.State.Health.Status}}' "$svc" 2>/dev/null || echo missing)"
@@ -169,49 +169,75 @@ jobs:
             fi
           done
 
-      # A DEPLOYMENT WITH NO SECRETS SKIPS, IT DOES NOT FAIL. This suite writes to a real GitHub
-      # repository and a real forge; a repository that has not been given those credentials cannot run
-      # it, and a red build would say "the code is broken" about a fact that is about secrets. The
-      # step names WHICH secrets are missing, so the skip is actionable rather than mysterious.
-      - name: is the deployment configured?
-        id: configured
-        env:
-          E2E_SERVERS: ${{ secrets.E2E_SERVERS }}
-          E2E_GITHUB_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
-          E2E_MIRROR_REPO: ${{ secrets.E2E_MIRROR_REPO }}
+      # THE MIRROR IS MADE HERE, ON EVERY RUN, AND THROWN AWAY AT THE END.
+      #
+      # A forge whose state survives between runs makes a suite that can pass because of what the last
+      # one left behind: a branch that already exists, a tag from Tuesday, a repository that is no
+      # longer empty. compose starts an EMPTY Forgejo each time; this step gives it an account, a token
+      # and the repository the mirror tools will write to.
+      - name: make a fresh mirror
+        id: forge
         run: |
-          missing=""
-          [ -z "$E2E_SERVERS" ]      && missing="$missing E2E_SERVERS"
-          [ -z "$E2E_GITHUB_TOKEN" ] && missing="$missing E2E_GITHUB_TOKEN"
-          [ -z "$E2E_MIRROR_REPO" ]  && missing="$missing E2E_MIRROR_REPO"
-          if [ -n "$missing" ]; then
-            echo "::warning::e2e skipped — missing secrets:$missing"
-            echo "run=false" >> "$GITHUB_OUTPUT"
+          set -uo pipefail
+          out="$(go run ./cmd/e2e-all/bootstrap -url http://127.0.0.1:3000)"
+          echo "$out"
+          while IFS='=' read -r k v; do
+            [ -n "$k" ] && echo "$k=$v" >> "$GITHUB_OUTPUT"
+          done <<< "$out"
+
+      # THE GITHUB TOKEN IS OPTIONAL, THE MIRROR IS NOT. Half this extension can be verified with no
+      # GitHub credential at all (the six git-* tools against the forge above); the other half needs
+      # one to write to a real repository. Without it the GitHub steps report themselves skipped,
+      # which is honest — a green build that silently tested half the tools is not.
+      - name: is a GitHub credential available?
+        id: gh
+        env:
+          GH_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::no E2E_GITHUB_TOKEN — the GitHub half of the suite will be skipped"
+            echo "have=false" >> "$GITHUB_OUTPUT"
           else
-            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "have=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: seed the configuration the extension reads
-        if: steps.configured.outputs.run == 'true'
         env:
-          # The MIRROR. A Gitea/Forgejo the suite can write to; without one the six git-* tools have
-          # nowhere to run and the suite is reduced to the GitHub half.
-          E2E_SERVERS: ${{ secrets.E2E_SERVERS }}
+          # The mirror this run just made, not a deployment someone configured by hand.
+          #
+          # `FORGE` IS THE COMPOSE SERVICE NAME, NOT localhost. The extension runs in a container, so
+          # 127.0.0.1 there is the extension itself — a mistake that would make every git-* tool
+          # report "cannot parse a host" or connect to nothing. The bootstrap step, running on the
+          # runner, uses the PUBLISHED port and is a different address for the same server.
+          E2E_SERVERS: >-
+            [{"host":"forge","kind":"gitea","api_url":"http://forge:3000",
+              "token":"${{ steps.forge.outputs.E2E_FORGE_TOKEN }}"}]
           GH_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
-          GH_E2E_REPO: easydev-org/test
         run: go run ./cmd/e2e-all/seed -nats nats://127.0.0.1:4222
 
       - name: call every tool
-        if: steps.configured.outputs.run == 'true'
         env:
-          GH_E2E_REPO: easydev-org/test
-          # NOT derivable from GH_E2E_REPO: the mirror lives under the FORGE account, so a mirror of
-          # easydev-org/test is agentdev/test.
-          GH_E2E_MIRROR: ${{ secrets.E2E_MIRROR_REPO }}
-          GH_E2E_FORGE: ${{ secrets.E2E_FORGE_URL }}
+          # FROM THE MIRROR THIS RUN MADE. The account name and the repository name are both produced
+          # by the bootstrap step, because a mirror of easydev-org/x lives at <forge-account>/x and
+          # that name cannot be derived from the upstream's.
+          GH_E2E_MIRROR: ${{ steps.forge.outputs.E2E_MIRROR_REPO }}
+          # THE ADDRESS THE TOOLS ARE GIVEN, which is the one the EXTENSION resolves — `forge`, the
+          # compose service name. The tools build a remote URL from this and the extension matches it
+          # against its `servers` table, so the two have to be the same string. The bootstrap step's
+          # own E2E_FORGE_URL is the runner's view of the same server and is not interchangeable.
+          GH_E2E_FORGE: http://forge:3000
           # A repository that HAS workflow runs, so the CI tools are verified rather than skipped.
           GH_E2E_CI_REPO: easydev-org/easyagent-gitdev-ext
-        run: go run ./cmd/e2e-all -nats nats://127.0.0.1:4222
+          GH_E2E_REPO: easydev-org/test
+        # THE GITHUB HALF IS GATED ON A CREDENTIAL, the mirror half always runs. `-skip-github` tells
+        # the suite to exercise the forge tools and report the GitHub ones as skipped-by-configuration
+        # rather than failed — because "no token in this repository" is not a fault in the code.
+        run: |
+          if [ "${{ steps.gh.outputs.have }}" = "true" ]; then
+            go run ./cmd/e2e-all -nats nats://127.0.0.1:4222
+          else
+            go run ./cmd/e2e-all -nats nats://127.0.0.1:4222 -skip-github
+          fi
 
       - name: extension logs on failure
         if: failure()

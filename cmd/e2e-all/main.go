@@ -68,11 +68,15 @@ func main() {
 		keep     = flag.Bool("keep", false, "leave the created branch, tag and PR behind")
 		only     = flag.String("only", "", "run only the named step (for debugging)")
 		verbose  = flag.Bool("v", false, "print every reply")
+		// -skip-github runs the MIRROR half only. A repository with no GitHub credential can still
+		// verify the six git-* tools against a forge, and reporting the rest as skipped is more honest
+		// than either failing or silently covering half of them.
+		skipGH   = flag.Bool("skip-github", false, "run only the mirror tools")
 	)
 	flag.Parse()
 
-	if *repo == "" {
-		fatalf("GH_E2E_REPO is required (owner/name on GitHub)")
+	if *repo == "" && !*skipGH {
+		fatalf("GH_E2E_REPO is required (owner/name on GitHub), or pass -skip-github")
 	}
 	if *mirror == "" {
 		// The forge account is not the upstream owner — a mirror of easydev-org/x lives at
@@ -96,7 +100,7 @@ func main() {
 	r := &runner{
 		ctx: ctx, a: a, extID: *extID, tenant: *tenant, session: *session,
 		repo: *repo, ciRepo: *ciRepo, mirror: *mirror, forgeBase: strings.TrimRight(*forge, "/"),
-		only: *only, verbose: *verbose,
+		only: *only, verbose: *verbose, skipGitHub: *skipGH,
 	}
 	st := &state{Repo: *repo, Mirror: *mirror}
 
@@ -171,6 +175,13 @@ func main() {
 	}
 	for _, s := range steps {
 		if *only != "" && !strings.Contains(s.name, *only) {
+			continue
+		}
+		// -skip-github: every step whose tool talks to GitHub is REPORTED as skipped rather than
+		// silently dropped. A suite that quietly runs a third of itself is worse than one that says
+		// which third it ran.
+		if r.skipGitHub && strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(s.name, "call ")), "gh-") {
+			r.skip(s.name, "no GitHub credential in this deployment")
 			continue
 		}
 		if err := s.fn(st); err != nil {

@@ -1,11 +1,12 @@
 # Services for the gitdev-ext end-to-end test.
 #
-# ONLY nats. Everything else this extension talks to is REAL and external:
-#   * git — the repository is easydev-org/test, cloned over HTTPS with a token, because the tool
-#     under test IS git and a stub would prove nothing about credentials or transport;
-#   * the GitHub API — for issues/PRs/releases, reached over the network the runner already has.
+# A THROWAWAY EVERY TIME. The forge below starts with an empty volume, so the suite never inherits a
+# branch, tag or repository from a previous run — every green build means what it says rather than
+# meaning "it worked once". GitHub cannot be thrown away, so the suite creates what it needs there
+# with unique names and deletes it afterwards.
 #
-# Putting a fake in front of either would test the fake.
+# GITHUB IS REAL AND CANNOT BE STUBBED: the tools under test call its API and push to its git
+# endpoints, so a fake would test the fake.
 services:
   nats:
     image: nats:2.10-alpine
@@ -21,6 +22,47 @@ services:
       retries: 30
       start_period: 3s
 
+  # THE MIRROR. A real Forgejo, created empty on every run.
+  #
+  # WHY A CONTAINER RATHER THAN A MOCK: the six git-* tools are the mirror. They create branches, write
+  # files through the contents API and push refs; a stub would test the stub, and the bugs this suite
+  # found (an empty repository refusing every write, a non-fast-forward on a fresh main) are exactly
+  # the ones a stub would have invented differently.
+  #
+  # NO VOLUME, DELIBERATELY. `down -v` at the end plus no named volume means each run starts from an
+  # empty forge — so a passing suite is not passing because of what the last one left behind.
+  forge:
+    image: codeberg.org/forgejo/forgejo:9
+    container_name: ci-forge
+    environment:
+      # INSTALL ON FIRST BOOT with no interactive wizard: a container that waits for somebody to click
+      # through a setup page is not a container a test can use.
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__database__PATH: /data/gitea/gitea.db
+      FORGEJO__server__ROOT_URL: http://localhost:3000/
+      FORGEJO__server__HTTP_PORT: "3000"
+      # The suite talks to it over plain http inside the compose network, so the secure-cookie rules
+      # that exist for a real deployment do not apply here.
+      FORGEJO__server__OFFLINE_MODE: "true"
+      FORGEJO__service__DISABLE_REGISTRATION: "false"
+      FORGEJO__service__REQUIRE_SIGNIN_VIEW: "false"
+      FORGEJO__security__MIN_PASSWORD_LENGTH: "8"
+      # The git endpoints are driven by the extension, not only the API, so the "sign in to view"
+      # defaults that would make an anonymous clone fail must be off.
+      FORGEJO__repository__DEFAULT_PRIVATE: "public"
+      FORGEJO__actions__ENABLED: "false"
+    ports:
+      - "3000:3000"
+    healthcheck:
+      # The API root answers only once the install has completed, so this is the readiness signal the
+      # suite needs rather than "the process started".
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3000/api/v1/version || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+
   # THE EXTENSION ITSELF, built from this checkout.
   #
   # This is what makes the suite END TO END rather than a handler test: the tools are called over the
@@ -34,6 +76,10 @@ services:
     container_name: ci-gitdev
     depends_on:
       nats:
+        condition: service_healthy
+      forge:
+        # The mirror must exist before the tools can be pointed at it. Waiting for its HEALTH (the API
+        # answering) rather than for the container to start matters: the first boot runs a migration.
         condition: service_healthy
     environment:
       NATS_URL: nats://nats:4222

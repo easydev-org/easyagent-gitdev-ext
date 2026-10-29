@@ -28,8 +28,9 @@ type runner struct {
 	mirror  string
 	// forgeBase is the scheme+host of the mirror, so a remote can be built as an address.
 	forgeBase string
-	only    string
-	verbose bool
+	only       string
+	verbose    bool
+	skipGitHub bool
 
 	// artifactID is carried from the listing step to the download step: the second needs an id the
 	// first discovered, and re-listing to find it again would be a second call for one fact.
