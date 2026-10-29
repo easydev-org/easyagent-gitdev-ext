@@ -213,6 +213,9 @@ jobs:
             [{"host":"forge","kind":"gitea","api_url":"http://forge:3000",
               "token":"${{ steps.forge.outputs.E2E_FORGE_TOKEN }}"}]
           GH_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
+          # The watcher needs a repository to follow. Without it the extension starts its release
+          # watcher with an empty list, which is legal but leaves that path unexercised.
+          GH_E2E_REPO: easydev-org/test
         run: go run ./cmd/e2e-all/seed -nats nats://127.0.0.1:4222
 
       - name: call every tool
