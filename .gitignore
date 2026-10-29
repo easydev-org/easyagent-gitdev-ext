@@ -6,3 +6,8 @@ cmd/gitdev-ext/ui/*
 
 ui/node_modules/
 ui/dist/
+
+# Built binaries. `go build ./cmd/x` drops the result in the working directory, and an executable
+# committed by accident is that many megabytes for everyone who clones afterwards.
+/e2e-all
+/gitdev-ext
