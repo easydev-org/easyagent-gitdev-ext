@@ -1,0 +1,19 @@
+# Run the extension as a LOCALLY BUILT BINARY instead of a container.
+#
+# WHY NOT THE IMAGE: building it — `npm ci`, `vite build`, a Go compile, on a runner with no layer
+# cache — took longer than the job's budget and cancelled runs before a single tool was called. The
+# image build is the `image` job's subject and is verified there on both architectures; repeating it
+# here proved nothing about the tools and cost everything.
+#
+# WHAT THIS SUITE IS ABOUT IS THE BUS: registration, permissions, argument deserialisation and reply
+# serialisation. None of that needs the browser bundle, and `//go:embed all:ui` accepts an empty
+# directory — so the binary built from this checkout is the same process the image would run.
+#
+# The binary is started by a step, not by compose: compose only supplies the two services that have
+# to be real (NATS and Forgejo), and the runner starts the extension next to them.
+services:
+  gitdev:
+    # Retired from this file: see the comment above. Kept as a profile so `compose up` without the
+    # profile does not try to start it.
+    profiles: ["unused"]
+    image: gitdev-e2e:unused

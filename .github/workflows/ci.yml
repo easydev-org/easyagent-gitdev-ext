@@ -154,17 +154,31 @@ jobs:
           cache: true
 
       - name: start nats and the extension
-        # BUILT HERE, ALWAYS. Pulling a published image would be faster on a tag, but it would also mean
-        # this job tested something other than the commit it was triggered by whenever the tag pointed
-        # somewhere else — and the version that is fast and occasionally wrong is the one that gets
-        # trusted. The build is slow because GitHub runners start with no layer cache; that is a cost,
-        # not a correctness problem.
-        run: docker compose -f .github/ci/compose.yaml -f .github/ci/compose.build.yaml up -d --build
+        # THE TWO SERVICES THAT MUST BE REAL, AND NOT THE EXTENSION.
+        #
+        # NATS and Forgejo are the world this extension talks to, so they run as containers exactly as
+        # a deployment would. The extension itself is a Go binary built from this checkout and started
+        # below — building its IMAGE meant a `npm ci` + `vite build` + compile on a runner with no
+        # layer cache, which took longer than the whole job's budget and cancelled runs before a
+        # single tool was called. The image build is verified by the `image` job on both architectures.
+        run: |
+          docker compose -f .github/ci/compose.yaml -f .github/ci/compose.binary.yaml up -d
+
+      - name: build and start the extension
+        # `//go:embed all:ui` accepts an empty directory, so the binary compiles without the browser
+        # bundle — and this suite never touches the UI. What it exercises is the bus.
+        run: |
+          set -uo pipefail
+          go build -o /tmp/gitdev-ext ./cmd/gitdev-ext
+          nohup /tmp/gitdev-ext >/tmp/gitdev.log 2>&1 &
+          ls -la /tmp/gitdev-ext
 
       - name: wait for both to be healthy
         run: |
           set -uo pipefail
-          for svc in ci-nats ci-forge ci-gitdev; do
+          # The two CONTAINERS, by docker health. The extension is a process this job started, so it is
+          # checked by its own port rather than by a container state that does not exist.
+          for svc in ci-nats ci-forge; do
             ok=0
             for i in $(seq 1 90); do
               status="$(docker inspect -f '{{.State.Health.Status}}' "$svc" 2>/dev/null || echo missing)"
@@ -177,6 +191,20 @@ jobs:
               exit 1
             fi
           done
+          # THE EXTENSION ANSWERS ON ITS OWN PORT once it has REGISTERED — which is the moment the
+          # tools become callable, so this is the readiness signal that matters.
+          ok=0
+          for i in $(seq 1 45); do
+            if wget -q -O- http://127.0.0.1:8080/api/v1/version >/dev/null 2>&1; then
+              echo "gitdev-ext answering"; ok=1; break
+            fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::the extension never answered"
+            tail -60 /tmp/gitdev.log || true
+            exit 1
+          fi
 
       # THE MIRROR IS MADE HERE, ON EVERY RUN, AND THROWN AWAY AT THE END.
       #
@@ -253,7 +281,7 @@ jobs:
 
       - name: extension logs on failure
         if: failure()
-        run: docker logs ci-gitdev 2>&1 | tail -80
+        run: tail -100 /tmp/gitdev.log || true
 
       - name: down
         if: always()
