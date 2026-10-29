@@ -67,12 +67,18 @@ services:
   #
   # This is what makes the suite END TO END rather than a handler test: the tools are called over the
   # bus, through registration, permissions and reply serialisation — the parts a direct call to
-  # Registry never touches. Building the image here (rather than pulling a published one) also means
-  # the suite tests the commit under review.
+  # Registry never touches.
   gitdev:
-    build:
-      context: ../..
-      dockerfile: Dockerfile
+    # THE PUBLISHED IMAGE, not a local build.
+    #
+    # Building here meant building the whole thing — `npm ci`, `vite build`, a Go compile — before a
+    # single tool could be called, on a runner with no layer cache, every run. The suite verifies a
+    # BEHAVIOUR; the image job already verifies that the thing builds, and repeating it here made a
+    # fifteen-minute prefix to a two-minute test.
+    #
+    # The tag is passed in by CI and points at the image built from THIS commit, so what runs is still
+    # what was pushed.
+    image: ${GITDEV_IMAGE:-ghcr.io/easydev-org/easyagent-gitdev-ext:latest}
     container_name: ci-gitdev
     depends_on:
       nats:

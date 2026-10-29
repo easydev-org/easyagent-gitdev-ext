@@ -141,10 +141,11 @@ jobs:
     # has no access to the secrets it needs anyway — a job that would always fail to authenticate is
     # a job that teaches people to ignore red builds.
     if: github.event_name != 'pull_request'
-    # FORTY-FIVE, not thirty. Seven steps move a whole branch between two servers, each bounded at two
-    # minutes when a host is unreachable — and a cancelled run reports nothing, which is worse than a
-    # slow one.
-    timeout-minutes: 45
+    # SIXTY. The image build alone takes ten to fifteen minutes on a runner with no layer cache, then
+    # seven steps move a whole branch between two servers, each bounded at two minutes when a host is
+    # unreachable. A cancelled run reports NOTHING, which is worse than a slow one — that is how this
+    # number was chosen.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -153,7 +154,12 @@ jobs:
           cache: true
 
       - name: start nats and the extension
-        run: docker compose -f .github/ci/compose.yaml up -d --build
+        # BUILT HERE, ALWAYS. Pulling a published image would be faster on a tag, but it would also mean
+        # this job tested something other than the commit it was triggered by whenever the tag pointed
+        # somewhere else — and the version that is fast and occasionally wrong is the one that gets
+        # trusted. The build is slow because GitHub runners start with no layer cache; that is a cost,
+        # not a correctness problem.
+        run: docker compose -f .github/ci/compose.yaml -f .github/ci/compose.build.yaml up -d --build
 
       - name: wait for both to be healthy
         run: |
