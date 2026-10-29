@@ -20,6 +20,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/easydev-org/easyagent-gitdev-ext/internal/forge"
 )
 
 func main() {
@@ -30,6 +32,10 @@ func main() {
 		email    = flag.String("email", envOr("E2E_FORGE_EMAIL", "e2e@example.invalid"), "its email")
 		repo     = flag.String("repo", envOr("E2E_FORGE_REPO", "mirror"), "repository to create")
 		container = flag.String("container", envOr("E2E_FORGE_CONTAINER", "ci-forge"), "docker container to run the CLI in")
+		// The repository this mirror copies. Without it the mirror is a placeholder, and every later
+		// step inherits a history that does not match the upstream's.
+		upstream = flag.String("upstream", envOr("GH_E2E_UPSTREAM", "https://github.com/easydev-org/test.git"), "upstream git url to seed from")
+		upToken  = flag.String("upstream-token", os.Getenv("GH_TOKEN"), "credential for the upstream")
 	)
 	flag.Parse()
 
@@ -60,8 +66,20 @@ func main() {
 	if err != nil {
 		fatalf("create a token: %v", err)
 	}
-	if err := createRepo(ctx, *base, token, *repo); err != nil {
-		fatalf("create the mirror repository: %v", err)
+
+	// THE MIRROR IS SEEDED FROM ITS UPSTREAM, not initialised empty and patched later.
+	//
+	// AN auto_init REPOSITORY HAS A ROOT COMMIT OF ITS OWN, and one that shares no ancestor with the
+	// upstream's — so the first real sync is refused as a non-fast-forward, and any branch cut from it
+	// has "no history in common with main", which is what GitHub said when the pull request was opened.
+	// forge.Establish is the code that already knows this: create with a commit, then FORCE the
+	// upstream's branch over it.
+	fc, err := forge.NewForHost(*base+"/api/v1", token)
+	if err != nil {
+		fatalf("forge client: %v", err)
+	}
+	if _, _, err := fc.Establish(ctx, *repo, *upstream, "main", *upToken); err != nil {
+		fatalf("seed the mirror from %s: %v", *upstream, err)
 	}
 
 	// THE VALUES THE CALLER NEEDS, on stdout, one per line.
@@ -103,41 +121,6 @@ func createToken(ctx context.Context, base, user, password string) (string, erro
 	return got.SHA1, nil
 }
 
-// createRepo makes the repository the mirror tools will write to.
-//
-// WITH AN INITIAL COMMIT, and that is not decoration: a Forgejo repository created empty is REAL and
-// answers 200, but its branch API answers "Git Repository is empty" and the contents API refuses every
-// write. Every mirror tool starts by writing, so an empty repository is a dead end that looks alive —
-// and it produced twelve failed steps the one time this was left false.
-func createRepo(ctx context.Context, base, token, name string) error {
-	body, _ := json.Marshal(map[string]any{
-		"name":      name,
-		"auto_init": true,
-		"private":   false,
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		strings.TrimRight(base, "/")+"/api/v1/user/repos", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "token "+token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusCreated {
-		return nil
-	}
-	// 409: it is already there, which on a re-run is the state the suite wants.
-	if resp.StatusCode == http.StatusConflict {
-		return nil
-	}
-	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(resp.Body)
-	return fmt.Errorf("status %d: %s", resp.StatusCode, buf.String())
-}
 
 func envOr(k, d string) string {
 	if v := os.Getenv(k); v != "" {

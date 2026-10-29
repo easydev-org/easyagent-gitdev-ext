@@ -214,6 +214,13 @@ jobs:
       # and the repository the mirror tools will write to.
       - name: make a fresh mirror
         id: forge
+        env:
+          # THE UPSTREAM THIS MIRROR COPIES. The bootstrap seeds the mirror FROM it, because an
+          # auto_init repository has a root commit of its own — one that shares no ancestor with the
+          # upstream's, so the first sync is refused as a non-fast-forward and any branch cut from it
+          # has "no history in common with main".
+          GH_E2E_UPSTREAM: https://github.com/easydev-org/test.git
+          GH_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
         run: |
           set -uo pipefail
           out="$(go run ./cmd/e2e-all/bootstrap -url http://127.0.0.1:3000)"
