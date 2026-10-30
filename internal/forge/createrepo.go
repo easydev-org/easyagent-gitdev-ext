@@ -18,7 +18,7 @@ import (
  * IDEMPOTENT: a repository that already exists is reported as such rather than as a failure, because
  * the caller's intent is "make sure this exists" and a name collision is the answer they wanted.
  */
-func (c *Client) CreateRepo(ctx context.Context, name string, private bool) (existed bool, err error) {
+func (c *Client) CreateRepo(ctx context.Context, name, defaultBranch string, private bool) (existed bool, err error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return false, fmt.Errorf("name is required")
@@ -27,6 +27,10 @@ func (c *Client) CreateRepo(ctx context.Context, name string, private bool) (exi
 		"name":      name,
 		"private":   private,
 		"auto_init": true,
+		// THE BRANCH THE PLACEHOLDER COMMIT LANDS ON, named to match the upstream. Left to the forge,
+		// it is always `main` — so mirroring a `master` repository produced TWO branches, a `main`
+		// holding one README and the real `master`, and the default pointed at the placeholder.
+		"default_branch": defaultBranch,
 	}, nil)
 	return existedFrom(err)
 }
@@ -44,19 +48,20 @@ func (c *Client) CreateRepo(ctx context.Context, name string, private bool) (exi
  * rather than creating one implicitly. EnsureOrg does that, and is separate because creating an
  * organisation is a different decision from creating a repository inside one.
  */
-func (c *Client) CreateRepoIn(ctx context.Context, owner, name string, private bool) (existed bool, err error) {
+func (c *Client) CreateRepoIn(ctx context.Context, owner, name, defaultBranch string, private bool) (existed bool, err error) {
 	owner = strings.TrimSpace(owner)
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return false, fmt.Errorf("name is required")
 	}
 	if owner == "" {
-		return c.CreateRepo(ctx, name, private)
+		return c.CreateRepo(ctx, name, defaultBranch, private)
 	}
 	err = c.do(ctx, http.MethodPost, "/orgs/"+esc(owner)+"/repos", map[string]any{
-		"name":      name,
-		"private":   private,
-		"auto_init": true,
+		"name":           name,
+		"private":        private,
+		"auto_init":      true,
+		"default_branch": defaultBranch,
 	}, nil)
 	return existedFrom(err)
 }

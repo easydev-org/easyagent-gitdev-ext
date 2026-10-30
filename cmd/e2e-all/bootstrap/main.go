@@ -92,7 +92,7 @@ func main() {
 	// asking, because a mirror keeps the upstream surname. (Taking the first return value here was a bug
 	// that compiled: it made the mirror identity "main", and every git-* tool then failed with
 	// cannot-derive-owner/repo from "http://.../main.git".)
-	if _, _, err := fc.Establish(ctx, upOwner, upName, *upstream, "main", *upToken); err != nil {
+	if _, _, err := fc.Establish(ctx, upOwner, upName, *upstream, "", *upToken); err != nil {
 		fatalf("seed the mirror from %s: %v", *upstream, err)
 	}
 	mirroredAs := upOwner + "/" + upName

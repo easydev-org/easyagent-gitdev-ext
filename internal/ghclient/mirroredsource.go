@@ -126,7 +126,9 @@ func (s *MirroredSource) Establish(ctx context.Context, repo string) (string, st
 	// THE OWNER IS THE UPSTREAM'S, so the mirror keeps the whole name. That is what lets every
 	// cross-repository page work: the panel reads GitHub with the mirror's repository name, and a
 	// mirror under a different owner is a page that 404s for a repository that exists.
-	branch, commit, err := c.Establish(ctx, owner, name, upstream, "main", upTok)
+	// EMPTY BRANCH: Establish asks the upstream which branch is its default. `main` is not universal,
+	// and a mirror seeded from a branch that does not exist fails with a message about the wrong thing.
+	branch, commit, err := c.Establish(ctx, owner, name, upstream, "", upTok)
 	if err != nil {
 		return "", "", "", err
 	}

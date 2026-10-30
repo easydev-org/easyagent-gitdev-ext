@@ -42,8 +42,10 @@ func TestLiveRebuildMirrors(t *testing.T) {
 		// EACH REPOSITORY GETS ITS OWN DEADLINE: one large upstream must not consume the budget for
 		// the ones after it, and a failure here is reported against the repository that caused it.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		// AN EMPTY BRANCH lets Establish ask the upstream which one is its default: half the world
+		// still uses master, and this rebuild exists to work on whatever the upstream actually has.
 		branch, commit, err := c.Establish(ctx, owner, name,
-			"https://github.com/"+repo+".git", "main", upTok)
+			"https://github.com/"+repo+".git", "", upTok)
 		cancel()
 		if err != nil {
 			t.Errorf("%s: %v", repo, err)

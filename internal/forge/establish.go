@@ -36,7 +36,14 @@ func (c *Client) Establish(ctx context.Context, owner, name, upstreamURL, upstre
 		return "", "", fmt.Errorf("upstreamURL is required")
 	}
 	if upstreamBranch == "" {
-		upstreamBranch = "main"
+		// ASK THE UPSTREAM WHAT ITS DEFAULT IS, rather than assuming `main`. Half the repositories in
+		// the world still use `master`, and a mirror seeded from a branch that does not exist fails
+		// with "the upstream has no branch main" — which names the symptom and not the assumption.
+		def, derr := upstreamDefaultBranch(ctx, upstreamURL, upstreamToken)
+		if derr != nil {
+			return "", "", derr
+		}
+		upstreamBranch = def
 	}
 
 	// WHERE THE UPSTREAM IS, NOT WHERE THE TOKEN IS. A mirror of `easydev-org/thing` is called
@@ -52,7 +59,10 @@ func (c *Client) Establish(ctx context.Context, owner, name, upstreamURL, upstre
 			return "", "", fmt.Errorf("make sure the organisation %q exists: %w", owner, oerr)
 		}
 	}
-	if _, cerr := c.CreateRepoIn(ctx, owner, name, false); cerr != nil {
+	// THE PLACEHOLDER'S BRANCH IS NAMED AFTER THE UPSTREAM'S. Left to the forge it is always `main`,
+	// so mirroring a `master` repository produced two branches — a `main` holding one README and the
+	// real `master` — and the default pointed at the placeholder.
+	if _, cerr := c.CreateRepoIn(ctx, owner, name, upstreamBranch, false); cerr != nil {
 		return "", "", fmt.Errorf("create %s/%s: %w", owner, name, cerr)
 	}
 
