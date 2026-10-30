@@ -123,20 +123,13 @@ func (s *MirroredSource) Establish(ctx context.Context, repo string) (string, st
 	if s.UpstreamToken != nil {
 		upTok = strings.TrimSpace(s.UpstreamToken(tenant))
 	}
-	branch, commit, err := c.Establish(ctx, name, upstream, "main", upTok)
+	// THE OWNER IS THE UPSTREAM'S, so the mirror keeps the whole name. That is what lets every
+	// cross-repository page work: the panel reads GitHub with the mirror's repository name, and a
+	// mirror under a different owner is a page that 404s for a repository that exists.
+	branch, commit, err := c.Establish(ctx, owner, name, upstream, "main", upTok)
 	if err != nil {
 		return "", "", "", err
 	}
-	// The mirror lives under the FORGE ACCOUNT, not the upstream's owner. The caller needs that name to
-	// build a route, so it is returned rather than left to be guessed: `agentdev/easyagent` and
-	// `easydev-org/easyagent` are different repositories, and only one of them exists here.
-	//
-	// The account is whoever the forge token belongs to, which the client can name.
-	who, werr := c.WhoAmI(ctx)
-	if werr != nil || who == "" {
-		// A name we could not read is not a reason to fail an operation that succeeded; the caller
-		// falls back to the upstream owner and the page reports what it finds.
-		return owner + "/" + name, branch, commit, nil
-	}
-	return who + "/" + name, branch, commit, nil
+	// The name is knowable without asking: it is the one that was asked for.
+	return owner + "/" + name, branch, commit, nil
 }

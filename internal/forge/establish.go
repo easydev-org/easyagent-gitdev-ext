@@ -20,11 +20,15 @@ import (
  *  2. PUSH the upstream's branch onto it. `CreateBranchFromUpstream` fetches the upstream into
  *     memory and pushes it here, which is the same path `git-sync-upstream` uses to follow it later.
  *
- * `owner` is the forge account that will hold the mirror. The repository is created under it rather
- * than under the upstream's owner, because the account that owns the token is the one that can write.
+ * `owner` IS THE UPSTREAM'S OWNER, and the mirror keeps the upstream's name in full. It used to be
+ * created under whichever account held the token, on the reasoning that only that account could write
+ * — but membership, not ownership, is what permits a write, and a mirror whose name differs from its
+ * upstream is one that every cross-repository page reads wrong. An empty owner means "the token's own
+ * account", which is the case for a personal repository.
  */
-func (c *Client) Establish(ctx context.Context, name, upstreamURL, upstreamBranch, upstreamToken string) (branch string, commits string, err error) {
+func (c *Client) Establish(ctx context.Context, owner, name, upstreamURL, upstreamBranch, upstreamToken string) (branch string, commits string, err error) {
 	name = strings.TrimSpace(name)
+	owner = strings.TrimSpace(owner)
 	if name == "" {
 		return "", "", fmt.Errorf("name is required")
 	}
@@ -35,19 +39,36 @@ func (c *Client) Establish(ctx context.Context, name, upstreamURL, upstreamBranc
 		upstreamBranch = "main"
 	}
 
-	if _, cerr := c.CreateRepo(ctx, name, false); cerr != nil {
-		return "", "", fmt.Errorf("create the repository: %w", cerr)
+	// WHERE THE UPSTREAM IS, NOT WHERE THE TOKEN IS. A mirror of `easydev-org/thing` is called
+	// `easydev-org/thing` here too, and that is load-bearing rather than tidy: the panel's issue, pull
+	// request and CI pages read GitHub with the mirror's repository name, so a mirror parked under the
+	// token's own account is a set of pages that 404 for a repository that plainly exists.
+	//
+	// The organisation is created first when it is missing — the forge answers 404 for an organisation
+	// it does not have rather than making one implicitly. Creating it makes the token's account its
+	// owner, which is what lets the next call write into it.
+	if owner != "" {
+		if _, oerr := c.EnsureOrg(ctx, owner, owner, false); oerr != nil {
+			return "", "", fmt.Errorf("make sure the organisation %q exists: %w", owner, oerr)
+		}
+	}
+	if _, cerr := c.CreateRepoIn(ctx, owner, name, false); cerr != nil {
+		return "", "", fmt.Errorf("create %s/%s: %w", owner, name, cerr)
 	}
 
 	// POINT THE CLIENT AT WHAT IT JUST CREATED. It was built with `NewForHost`, which has no owner or
-	// repository — every call after this one names a path, and without this they resolve against an
-	// empty owner and the forge answers "repository not found". The account is asked for rather than
-	// assumed, because the repository was created under whoever the token belongs to.
-	who, werr := c.WhoAmI(ctx)
-	if werr != nil {
-		return "", "", fmt.Errorf("find the account that owns the new repository: %w", werr)
+	// repository, and every call after this one names a path that resolves against those. The owner is
+	// the one asked for; only an EMPTY owner means "the token's own account", and only then is it asked
+	// for.
+	c.Repo = name
+	c.Owner = owner
+	if c.Owner == "" {
+		who, werr := c.WhoAmI(ctx)
+		if werr != nil {
+			return "", "", fmt.Errorf("find the account that owns the new repository: %w", werr)
+		}
+		c.Owner = who
 	}
-	c.Owner, c.Repo = who, name
 
 	// The content, from the upstream, under the SAME branch name: a mirror whose main is called
 	// something else would break every later step that assumes the upstream's names.

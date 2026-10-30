@@ -96,8 +96,9 @@
     try {
       const done = await api.establish(fullName)
       mirrored = { ...(mirrored ?? {}), [fullName]: 'ready' }
-      // `mirroredAs` IS THE ROUTE. The mirror lives under the FORGE account, so `easydev-org/x`
-      // becomes `agentdev/x` — a page built from the name we asked about would 404.
+      // `mirroredAs` IS THE ROUTE, and it is asked for rather than assumed. It now equals the name that
+      // was clicked — a mirror keeps its upstream's owner — but taking it from the reply means the two
+      // cannot drift apart again without this line being the thing that notices.
       location.hash = '#/tree/' + done.mirroredAs
     } catch (e) {
       setupErrors = {

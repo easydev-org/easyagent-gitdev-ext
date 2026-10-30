@@ -30,10 +30,10 @@ func main() {
 		user     = flag.String("user", envOr("E2E_FORGE_USER", "e2e"), "account to create")
 		password = flag.String("password", envOr("E2E_FORGE_PASSWORD", "e2e-password-1"), "its password")
 		email    = flag.String("email", envOr("E2E_FORGE_EMAIL", "e2e@example.invalid"), "its email")
-		repo     = flag.String("repo", envOr("E2E_FORGE_REPO", "mirror"), "repository to create")
 		container = flag.String("container", envOr("E2E_FORGE_CONTAINER", "ci-forge"), "docker container to run the CLI in")
-		// The repository this mirror copies. Without it the mirror is a placeholder, and every later
-		// step inherits a history that does not match the upstream's.
+		// The upstream this mirror copies, whose OWNER AND NAME the mirror takes. There is no separate
+		// `-repo`: a mirror is named after the thing it mirrors, and a flag that could disagree with
+		// the upstream would be a way to make the two differ.
 		upstream = flag.String("upstream", envOr("GH_E2E_UPSTREAM", "https://github.com/easydev-org/test.git"), "upstream git url to seed from")
 		upToken  = flag.String("upstream-token", os.Getenv("GH_TOKEN"), "credential for the upstream")
 	)
@@ -81,14 +81,24 @@ func main() {
 	if err != nil {
 		fatalf("forge client: %v", err)
 	}
-	if _, _, err := fc.Establish(ctx, *repo, *upstream, "main", *upToken); err != nil {
+	// THE MIRROR KEEPS THE UPSTREAM'S FULL NAME, owner included. The owner comes from the upstream URL
+	// rather than from a flag, because it is the fact that makes every cross-repository page work: the
+	// panel reads GitHub with the mirror's name, so the two have to be the same name.
+	upOwner, upName := ownerAndName(*upstream)
+	if upOwner == "" {
+		fatalf("cannot read an owner from %q", *upstream)
+	}
+	mirroredAs, _, err := fc.Establish(ctx, upOwner, upName, *upstream, "main", *upToken)
+	if err != nil {
 		fatalf("seed the mirror from %s: %v", *upstream, err)
 	}
 
 	// THE VALUES THE CALLER NEEDS, on stdout, one per line.
 	fmt.Printf("E2E_FORGE_LOGIN=%s\n", *user)
 	fmt.Printf("E2E_FORGE_TOKEN=%s\n", token)
-	fmt.Printf("E2E_MIRROR_REPO=%s/%s\n", *user, *repo)
+	// THE NAME IT ACTUALLY HAS, not the one that was asked for: the mirror keeps the upstream's owner,
+	// so this is `easydev-org/thing` rather than `<forge-account>/thing`.
+	fmt.Printf("E2E_MIRROR_REPO=%s\n", mirroredAs)
 	fmt.Printf("E2E_FORGE_URL=%s\n", strings.TrimRight(*base, "/"))
 }
 
@@ -124,6 +134,31 @@ func createToken(ctx context.Context, base, user, password string) (string, erro
 	return got.SHA1, nil
 }
 
+
+
+// ownerAndName reads owner and repository from a git URL — https, ssh, or the trailing path of either.
+//
+// A FUNCTION RATHER THAN A REGEX AT THE CALL SITE: the same parse appears in a dozen places and they
+// drift. This one handles the shapes a caller actually pastes.
+func ownerAndName(raw string) (owner, name string) {
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimSuffix(raw, ".git")
+	raw = strings.TrimRight(raw, "/")
+	if i := strings.LastIndex(raw, ":"); i >= 0 && !strings.Contains(raw[i:], "//") {
+		// scp-style: git@host:owner/name
+		raw = raw[i+1:]
+	} else if i := strings.Index(raw, "://"); i >= 0 {
+		rest := raw[i+3:]
+		if j := strings.Index(rest, "/"); j >= 0 {
+			raw = rest[j+1:]
+		}
+	}
+	parts := strings.Split(raw, "/")
+	if len(parts) < 2 {
+		return "", ""
+	}
+	return parts[len(parts)-2], parts[len(parts)-1]
+}
 
 func envOr(k, d string) string {
 	if v := os.Getenv(k); v != "" {
