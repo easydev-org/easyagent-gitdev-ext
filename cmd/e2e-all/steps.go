@@ -753,10 +753,13 @@ func (r *runner) stepRepoRename(st *state) error {
 
 	// A REPOSITORY THAT WAS JUST CREATED CANNOT BE RENAMED YET. GitHub answers 422 with "a conflicting
 	// repository operation is still in progress" while its own creation settles — an asynchronous
-	// property of the platform, not a fault in the tool. Retried rather than slept through once,
-	// because how long it takes is not published.
+	// property of the platform, not a fault in the tool.
+	//
+	// AND SOMETIMES IT ANSWERS 404 — the repository exists and is not yet readable at the path the
+	// rename addresses. That is the same lag wearing a different status code, and retrying only the
+	// 422 was why one CI run failed here while a run a minute later passed with identical code.
 	var lastErr error
-	for attempt := 0; attempt < 6; attempt++ {
+	for attempt := 0; attempt < 10; attempt++ {
 		_, err := r.must("gh-repo-rename", "gh-repo-rename", map[string]any{
 			// "name" is the NEW name; the repository being renamed is named by "repo".
 			"repo": r.owner() + "/" + st.Scratch, "name": st.ScratchRenamed,
@@ -766,7 +769,9 @@ func (r *runner) stepRepoRename(st *state) error {
 			return nil
 		}
 		lastErr = err
-		if !strings.Contains(err.Error(), "still in progress") {
+		// ONLY THE TWO LAG SIGNATURES ARE RETRIED. Anything else is an answer — a name that is taken, a
+		// token that cannot write — and retrying it would turn a clear failure into a slow one.
+		if !strings.Contains(err.Error(), "still in progress") && !strings.Contains(err.Error(), "404") {
 			return err
 		}
 		time.Sleep(3 * time.Second)
@@ -818,7 +823,9 @@ func (r *runner) stepRepoDelete(st *state) error {
 			return nil
 		}
 		lastErr = err
-		if !strings.Contains(err.Error(), "still in progress") {
+		// THE SAME TWO LAG SIGNATURES the rename retries: a delete issued moments after the rename hits
+		// both. Anything else is an answer and is returned.
+		if !strings.Contains(err.Error(), "still in progress") && !strings.Contains(err.Error(), "404") {
 			return err
 		}
 		time.Sleep(4 * time.Second)
