@@ -88,10 +88,14 @@ func main() {
 	if upOwner == "" {
 		fatalf("cannot read an owner from %q", *upstream)
 	}
-	mirroredAs, _, err := fc.Establish(ctx, upOwner, upName, *upstream, "main", *upToken)
-	if err != nil {
+	// Establish returns the BRANCH it copied and the commit — not a name. The name is known without
+	// asking, because a mirror keeps the upstream surname. (Taking the first return value here was a bug
+	// that compiled: it made the mirror identity "main", and every git-* tool then failed with
+	// cannot-derive-owner/repo from "http://.../main.git".)
+	if _, _, err := fc.Establish(ctx, upOwner, upName, *upstream, "main", *upToken); err != nil {
 		fatalf("seed the mirror from %s: %v", *upstream, err)
 	}
+	mirroredAs := upOwner + "/" + upName
 
 	// THE VALUES THE CALLER NEEDS, on stdout, one per line.
 	fmt.Printf("E2E_FORGE_LOGIN=%s\n", *user)
