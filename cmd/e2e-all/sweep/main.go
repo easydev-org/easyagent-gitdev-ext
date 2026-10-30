@@ -31,6 +31,7 @@ func main() {
 		branch  = flag.String("branch-pattern", "", "also delete branches with this prefix")
 		repo    = flag.String("repo", "", "repository whose branches to sweep (with -branch-pattern)")
 		dryRun  = flag.Bool("dry-run", false, "say what would be deleted, delete nothing")
+		keep    = flag.String("keep", "mrflow,e2e", "comma-separated repository names never to delete")
 	)
 	flag.Parse()
 	if *token == "" {
@@ -60,6 +61,13 @@ func main() {
 			}
 			for _, r := range repos {
 				if !strings.HasPrefix(r.Name, *pattern) {
+					continue
+				}
+				// KEPT NAMES WIN OVER THE PATTERN. These are hand-made repositories that exist nowhere
+				// else; a pattern is a guess about what is disposable, and a guess is not worth losing
+				// data over.
+				if kept(strings.Split(*keep, ","), r.Name) {
+					fmt.Println("keeping", r.FullName, "(named in -keep)")
 					continue
 				}
 				if *dryRun {
@@ -157,4 +165,15 @@ func envOr(k, d string) string {
 func fatalf(f string, a ...any) {
 	fmt.Fprintf(os.Stderr, "sweep: "+f+"\n", a...)
 	os.Exit(2)
+}
+
+// kept reports whether name is in the list. Compared case-insensitively, because a name somebody typed
+// by hand is not worth failing over.
+func kept(list []string, name string) bool {
+	for _, k := range list {
+		if strings.EqualFold(strings.TrimSpace(k), name) {
+			return true
+		}
+	}
+	return false
 }

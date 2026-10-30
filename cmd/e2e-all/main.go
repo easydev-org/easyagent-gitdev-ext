@@ -80,8 +80,9 @@ func main() {
 		fatalf("GH_E2E_REPO is required (owner/name on GitHub), or pass -skip-github")
 	}
 	if *mirror == "" {
-		// The forge account is not the upstream owner — a mirror of easydev-org/x lives at
-		// agentdev/x — so it cannot be derived from -repo and is not guessed.
+		// The mirror's name IS the upstream's now, so this could be derived — but it is required
+		// anyway: a caller that had to derive it would be a caller that could get it wrong, and the
+		// whole point of the name being the same is that nobody has to guess.
 		fatalf("GH_E2E_MIRROR is required (owner/name in the forge)")
 	}
 

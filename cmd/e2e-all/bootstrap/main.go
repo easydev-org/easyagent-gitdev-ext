@@ -34,7 +34,7 @@ func main() {
 		// The upstream this mirror copies, whose OWNER AND NAME the mirror takes. There is no separate
 		// `-repo`: a mirror is named after the thing it mirrors, and a flag that could disagree with
 		// the upstream would be a way to make the two differ.
-		upstream = flag.String("upstream", envOr("GH_E2E_UPSTREAM", "https://github.com/easydev-org/test.git"), "upstream git url to seed from")
+		upstream = flag.String("upstream", envOr("GH_E2E_UPSTREAM", "https://github.com/easydev-org-test/test.git"), "upstream git url to seed from")
 		upToken  = flag.String("upstream-token", os.Getenv("GH_TOKEN"), "credential for the upstream")
 	)
 	flag.Parse()

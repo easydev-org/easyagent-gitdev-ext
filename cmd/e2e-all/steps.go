@@ -733,8 +733,8 @@ func (r *runner) stepRepoCreate(st *state) error {
 	st.Scratch = fmt.Sprintf("e2e-scratch-%d", time.Now().Unix())
 	_, err := r.must("gh-repo-create", "gh-repo-create", map[string]any{
 		// `org` PUTS IT WHERE THE SUITE CAN FIND IT AGAIN. Without it the repository lands under the
-		// TOKEN'S OWNER — a personal account — and the rename that follows addresses
-		// easydev-org/<name>, which does not exist. That 404 is what this argument prevents.
+		// TOKEN'S OWNER — a personal account — while the rename and delete that follow address
+		// <org>/<name>, which would not exist. That 404 is what this argument prevents.
 		"name": st.Scratch, "org": r.owner(), "private": true, "auto_init": true,
 		"description": "created by cmd/e2e-all, deleted at the end",
 	})

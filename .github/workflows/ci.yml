@@ -109,7 +109,7 @@ jobs:
           # a failure rather than a skip.
           GH_E2E: "1"
           GH_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
-          GH_E2E_REPO: easydev-org/test
+          GH_E2E_REPO: easydev-org-test/test
           E2E_NATS_URL: nats://127.0.0.1:4222
         # ./interop/e2e is gone with the workspace: it drove git-ws-clone and the checkout tools, which
         # no longer exist. The live coverage that remains is in internal/tools — those tests talk to
@@ -219,7 +219,7 @@ jobs:
           # auto_init repository has a root commit of its own — one that shares no ancestor with the
           # upstream's, so the first sync is refused as a non-fast-forward and any branch cut from it
           # has "no history in common with main".
-          GH_E2E_UPSTREAM: https://github.com/easydev-org/test.git
+          GH_E2E_UPSTREAM: https://github.com/easydev-org-test/test.git
           GH_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
         run: |
           set -uo pipefail
@@ -260,23 +260,30 @@ jobs:
           GH_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
           # The watcher needs a repository to follow. Without it the extension starts its release
           # watcher with an empty list, which is legal but leaves that path unexercised.
-          GH_E2E_REPO: easydev-org/test
+          GH_E2E_REPO: easydev-org-test/test
         run: go run ./cmd/e2e-all/seed -nats nats://127.0.0.1:4222
 
       - name: call every tool
         env:
           # FROM THE MIRROR THIS RUN MADE. The account name and the repository name are both produced
-          # by the bootstrap step, because a mirror of easydev-org/x lives at <forge-account>/x and
-          # that name cannot be derived from the upstream's.
+          # by the bootstrap step, because the mirror's identity is the upstream's and only the bootstrap
+          # knows which upstream this run used.
           GH_E2E_MIRROR: ${{ steps.forge.outputs.E2E_MIRROR_REPO }}
           # THE ADDRESS THE TOOLS ARE GIVEN. It has to be the SAME STRING the extension has in its
           # `servers` table above, because the tools build a remote URL from it and the extension
           # matches that URL's host against what it was configured with. Both are now the loopback
           # address, for the reason given beside E2E_SERVERS.
           GH_E2E_FORGE: http://127.0.0.1:3000
-          # A repository that HAS workflow runs, so the CI tools are verified rather than skipped.
-          GH_E2E_CI_REPO: easydev-org/easyagent-gitdev-ext
-          GH_E2E_REPO: easydev-org/test
+          # THE CI TOOLS TARGET THE THROWAWAY ORGANISATION TOO, even though that repository has no runs
+          # to read yet.
+          #
+          # Pointing them at the real project would give them something to look at, but `gh-run-cancel`
+          # and `gh-run-rerun` WRITE: excluding this run is not enough when the repository also has
+          # other people's. A suite that cancels somebody's build to prove it can cancel is a suite
+          # that will eventually cancel the wrong one. So the CI steps report themselves skipped until
+          # the test repository has a workflow of its own.
+          GH_E2E_CI_REPO: easydev-org-test/test
+          GH_E2E_REPO: easydev-org-test/test
         # THE GITHUB HALF IS GATED ON A CREDENTIAL, the mirror half always runs. `-skip-github` tells
         # the suite to exercise the forge tools and report the GitHub ones as skipped-by-configuration
         # rather than failed — because "no token in this repository" is not a fault in the code.
@@ -310,9 +317,9 @@ jobs:
           fi
           go build -o /tmp/sweep ./cmd/e2e-all/sweep
           echo "--- would delete ---"
-          /tmp/sweep -owner easydev-org -dry-run || true
+          /tmp/sweep -owner easydev-org-test -dry-run || true
           echo "--- deleting ---"
-          /tmp/sweep -owner easydev-org || true
+          /tmp/sweep -owner easydev-org-test || true
 
       - name: down
         if: always()

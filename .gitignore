@@ -11,3 +11,4 @@ ui/dist/
 # committed by accident is that many megabytes for everyone who clones afterwards.
 /e2e-all
 /gitdev-ext
+/sweep
