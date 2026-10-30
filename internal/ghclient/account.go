@@ -231,6 +231,19 @@ func (c *Client) DeleteRepo(ctx context.Context) error {
 	}
 	resp, err := c.gh.Repositories.Delete(ctx, c.Owner, c.Repo)
 	c.note(resp)
+	if err == nil {
+		return nil
+	}
+	// A 404 MEANS IT IS ALREADY GONE, which is the state the caller asked for. Reporting it as a failure
+	// makes a successful delete look broken — and it did: the repository was removed and the tool
+	// answered 404, so a CI step failed over a deletion that had happened.
+	//
+	// IT IS NOT ALWAYS THIS SIMPLE: GitHub answers 403 for both "no permission" and "not found" on
+	// DELETE, which is why CheckTokenCanDelete exists and runs first. By the time this call is made,
+	// the token is known to carry `delete_repo`, so a 404 here is genuinely "nothing left to delete".
+	if IsNotFound(err) {
+		return nil
+	}
 	return wrap(err)
 }
 
