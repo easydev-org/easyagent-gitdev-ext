@@ -164,18 +164,53 @@ func (r *runner) summary() {
 	}
 }
 
-// cleanup removes what the run created, best effort: a leftover branch is untidy, a failed cleanup
-// must not turn a passing suite red.
+/**
+ * cleanup removes what the run created, using the TOOLS, on the way out.
+ *
+ * IT RUNS IN A DEFER because a step that fails still leaves things behind and the next run inherits
+ * them. Both failure modes that put twenty-eight stray repositories on the test organisation were
+ * this: a delete that failed for want of a retry, and a run cancelled before the delete step was
+ * reached at all.
+ *
+ * IT ONLY TOUCHES WHAT THIS RUN NAMED. Every id here was written by a step above; nothing is found by
+ * pattern, because a cleanup that deletes by pattern has somebody else's repository as its worst case.
+ *
+ * ERRORS ARE PRINTED, NOT FATAL: the suite's verdict is already decided, and a failed tidy-up must not
+ * turn a passing run red — but silence would hide the leak this exists to prevent.
+ */
 func (r *runner) cleanup(st *state) {
-	if st.PR > 0 {
-		// A merged PR cannot be reopened; nothing to do.
-		_ = st
-	}
 	if st.Tag != "" {
 		if _, err := r.call("gh-tag-delete", map[string]any{
 			"repo": r.repo, "tag": st.Tag, "confirm": true,
 		}); err != nil {
 			fmt.Printf("cleanup: delete tag %s: %v\n", st.Tag, err)
+		}
+	}
+	// THE BRANCH THIS RUN PUSHED. stepBranchDelete normally removes it; this is the path taken when
+	// that step never ran, and a branch left on the upstream is what makes a LATER run fail with
+	// "cannot lock ref: reference already exists".
+	if st.Branch != "" {
+		if _, err := r.call("git-branch-delete", map[string]any{
+			"remote":   r.mirrorRemote(),
+			"branch":   st.Branch,
+			"upstream": fmt.Sprintf("https://github.com/%s.git", r.repo),
+			"confirm":  st.Branch,
+		}); err != nil {
+			fmt.Printf("cleanup: delete branch %s: %v\n", st.Branch, err)
+		}
+	}
+	// THE THROWAWAY REPOSITORY, under whichever name it currently has: a rename may have happened and
+	// the delete may not.
+	name := st.ScratchRenamed
+	if name == "" {
+		name = st.Scratch
+	}
+	if name != "" {
+		slug := r.owner() + "/" + name
+		if _, err := r.call("gh-repo-delete", map[string]any{
+			"repo": slug, "confirm": slug,
+		}); err != nil {
+			fmt.Printf("cleanup: delete repository %s: %v\n", slug, err)
 		}
 	}
 }

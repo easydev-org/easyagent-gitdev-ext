@@ -811,6 +811,9 @@ func (r *runner) stepRepoDelete(st *state) error {
 			"repo": slug, "confirm": slug,
 		})
 		if err == nil {
+			// CLEARED, so the deferred cleanup does not try again — and so a failure later in the run
+			// does not leave the name pointing at something that no longer exists.
+			st.Scratch, st.ScratchRenamed = "", ""
 			r.ok("gh-repo-delete")
 			return nil
 		}

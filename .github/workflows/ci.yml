@@ -291,6 +291,29 @@ jobs:
         if: failure()
         run: tail -100 /tmp/gitdev.log || true
 
+      # WHAT THIS RUN COULD NOT TIDY UP. The suite deletes what it created on the way out, but a run
+      # that is cancelled cannot — and that is how twenty-eight `e2e-scratch-*` repositories appeared
+      # on the test organisation while this suite was being written.
+      #
+      # `always()` because the case it exists for is precisely the run that died. `-dry-run` FIRST and
+      # its output is printed, so the log says what was about to go before anything goes; the pattern
+      # is the suite's own prefix and nothing else.
+      - name: sweep what a cancelled run left behind
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "no token; nothing to sweep"
+            exit 0
+          fi
+          go build -o /tmp/sweep ./cmd/e2e-all/sweep
+          echo "--- would delete ---"
+          /tmp/sweep -owner easydev-org -dry-run || true
+          echo "--- deleting ---"
+          /tmp/sweep -owner easydev-org || true
+
       - name: down
         if: always()
         run: docker compose -f .github/ci/compose.yaml down -v
