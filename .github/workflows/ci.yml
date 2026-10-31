@@ -34,36 +34,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "26"
-          # No npm cache: it is keyed on a lockfile, and a lockfile that does not exist yet fails the
-          # whole job with "Some specified paths were not resolved, unable to cache dependencies"
-          # before a single line of ours runs. The install is seconds; the cache is not worth a
-          # failure mode that points at the wrong thing.
-      - run: npm install --no-audit --no-fund
-        working-directory: ui
-      - name: types
-        run: npm run check
-        working-directory: ui
-      # A build, not just a typecheck: this is what go:embed will serve, and a bundling error (a bad
-      # base path, a missing import) only shows up here.
-      - name: build
-        run: npm run build
-        working-directory: ui
+      # THE PANEL IS NOT BUILT HERE ANY MORE.
+      #
+      # ui/ no longer contains source: it is the built bundle, fetched from
+      # easydev-org/easyagent-gitdev-ext-ui's releases. The types-and-build steps that used to live
+      # here (npm install, npm run check, npm run build) moved to THAT repository, where the source
+      # is and where a failure names the right project.
+      #
+      # What is worth checking here is the thing that can break on THIS side: that the fetch works,
+      # that the bundle it produces is usable, and that it is the version this repository pins.
+      - name: the pinned bundle can be fetched
+        run: |
+          set -euo pipefail
+          # A fresh directory, so a committed dist/ cannot make this pass by accident.
+          rm -rf /tmp/uicheck && mkdir -p /tmp/uicheck
+          cp cmd/gitdev-ext/ui/fetch-ui.sh /tmp/uicheck/
+          UI_VERSION="$(grep -oP 'ARG UI_VERSION=\K.*' Dockerfile | head -1)" \
+            sh -c 'cd /tmp/uicheck && UI_VERSION="$UI_VERSION" sh ./fetch-ui.sh'
+          test -f /tmp/uicheck/dist/index.html || {
+            echo "::error::the bundle has no index.html"; find /tmp/uicheck -maxdepth 2; exit 1; }
+          echo "fetched $(find /tmp/uicheck/dist -type f | wc -l) files"
+          echo "--- the bundle points its assets at the mount point ---"
+          grep -o 'src="[^"]*"' /tmp/uicheck/dist/index.html | head -5
       # The base path must match UISpec.Base in main.go or every asset 404s in the deployed image.
       - name: base path matches the mount point
         run: |
           set -euo pipefail
-          grep -q 'base: *["'"'"']/ext/gitdev/["'"'"']' ui/vite.config.ts
           # main.go declares the mount point ONCE (`const uiBase = "/ext/gitdev"`), and UISpec.Base
           # references it, so the check is that the constant still says what Vite builds for. The
           # earlier grep looked for a literal in the UISpec struct — it broke the moment the value
           # became a constant, which is exactly the kind of coupling this check should not have.
           grep -q 'const uiBase = "/ext/gitdev"' cmd/gitdev-ext/main.go
           grep -q 'Base: *uiBase' cmd/gitdev-ext/main.go
-          echo "vite base and uiBase agree"
-          grep -o 'src="[^"]*"' ui/dist/index.html | head -5
+          # AND THE BUNDLE MUST AGREE WITH IT. The panel is now built by another repository, so this
+          # is the only place the two can be compared: a panel built for a different base loads its
+          # assets from a path this server does not serve, and every one of them 404s.
+          grep -q 'src="/ext/gitdev/assets/' /tmp/uicheck/dist/index.html || {
+            echo "::error::the bundle does not reference /ext/gitdev/assets — it was built for another base"
+            grep -o 'src="[^"]*"' /tmp/uicheck/dist/index.html | head -5
+            exit 1
+          }
+          echo "the bundle's assets and uiBase agree"
 
   # The extension against a REAL broker and a REAL GitHub repository.
   #
