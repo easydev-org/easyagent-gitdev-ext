@@ -2,8 +2,6 @@ package uihandler
 
 import (
 	"context"
-	"net/http"
-	"strconv"
 )
 
 /**
@@ -55,71 +53,4 @@ type CommentView struct {
 	Author string `json:"author"`
 	Body   string `json:"body"`
 	When   string `json:"when"`
-}
-
-// The issue page's endpoints. They reuse authedPull's authentication and argument parsing — a repo
-// and a number are a repo and a number, whichever kind of item the number names.
-func (h *Handler) issue(w http.ResponseWriter, r *http.Request) {
-	repo, n, ok := h.authedPull(w, r)
-	if !ok {
-		return
-	}
-	v, err := h.Issues.Issue(r.Context(), repo, n)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, v)
-}
-
-func (h *Handler) issueComments(w http.ResponseWriter, r *http.Request) {
-	repo, n, ok := h.authedPull(w, r)
-	if !ok {
-		return
-	}
-	v, err := h.Issues.Comments(r.Context(), repo, n)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"comments": v, "count": len(v)})
-}
-
-// issues lists a repository's issues or pull requests.
-//
-// `kind` is "issue" or "pr"; anything else is refused rather than ignored, because a filter that
-// silently does nothing looks like it worked.
-func (h *Handler) issues(w http.ResponseWriter, r *http.Request) {
-	tenant, err := h.who(r)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	*r = *r.WithContext(context.WithValue(r.Context(), tenantKey{}, tenant))
-
-	q := r.URL.Query()
-	repo := q.Get("repo")
-	if repo == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "repo (owner/name) is required"})
-		return
-	}
-	kind := q.Get("kind")
-	switch kind {
-	case "issue", "pr":
-	case "":
-		kind = "issue"
-	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `kind must be "issue" or "pr"`})
-		return
-	}
-	limit := 30
-	if v, cerr := strconv.Atoi(q.Get("limit")); cerr == nil && v > 0 && v <= 100 {
-		limit = v
-	}
-	list, lerr := h.Issues.List(r.Context(), repo, kind, q.Get("state"), limit)
-	if lerr != nil {
-		writeErr(w, lerr)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": list, "count": len(list), "kind": kind})
 }

@@ -1,0 +1,513 @@
+// The gitdev extension's UI API.
+//
+// THIS FILE IS THE CONTRACT between the extension's Go backend and its browser UI, which lives in a
+// separate repository and is deployed separately. It replaces a set of hand-written REST routes whose
+// response shapes were `map[string]any` literals — which meant the UI's contract was a side effect of
+// whatever the handler happened to emit, and two of those literals disagreed with what the panel read
+// (`Path` vs `path`), producing an empty file tree against correct data.
+//
+// EVERY MESSAGE HERE CORRESPONDS TO A FIELD THE OLD ROUTES EMITTED. Nothing is invented, and nothing
+// is dropped: a field the panel reads is a field in this file, or the panel stops working.
+//
+// AUTHENTICATION IS NOT IN THE MESSAGE. The tenant is resolved from the bearer token by the server,
+// exactly as before: a tenant in a request body would be a tenant a caller could choose, and that was
+// a real hole once.
+syntax = "proto3";
+
+package ui.v1;
+
+option go_package = "github.com/easydev-org/easyagent-gitdev-ext/gen/ui/v1;uiv1";
+
+// ---------------------------------------------------------------------------
+// The service: reads only.
+//
+// NOTHING HERE WRITES except `Establish`. Browsing and reviewing are reads; every change goes through
+// a tool, where the permission model already lives. A page that could merge would need its own
+// permission story and does not have one.
+// ---------------------------------------------------------------------------
+
+service UiService {
+  // ---- who and where ----
+
+  // GetWhoami names the authenticated account, so the panel can say whose view this is.
+  rpc GetWhoami(GetWhoamiRequest) returns (GetWhoamiResponse);
+
+  // ListOrgs lists the organisations the caller belongs to.
+  rpc ListOrgs(ListOrgsRequest) returns (ListOrgsResponse);
+
+  // ListRepos lists repositories the caller can see; `org` narrows to one.
+  rpc ListRepos(ListReposRequest) returns (ListReposResponse);
+
+  // ---- one repository, from the upstream ----
+
+  // ListReleases lists a repository's releases, newest first.
+  rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
+
+  // ListWorkflows lists a repository's workflows.
+  rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse);
+
+  // ---- the mirror ----
+
+  // ListMirrored lists which of the caller's repositories the MIRROR has.
+  rpc ListMirrored(ListMirroredRequest) returns (ListMirroredResponse);
+
+  // Establish creates a repository on the forge and seeds it from its upstream. THE ONLY WRITE.
+  rpc Establish(EstablishRequest) returns (EstablishResponse);
+
+  // GetRepo describes one mirror repository: its default branch, branches and tags.
+  rpc GetRepo(GetRepoRequest) returns (GetRepoResponse);
+
+  // ListRefs lists everything browsable: every branch and tag.
+  rpc ListRefs(ListRefsRequest) returns (ListRefsResponse);
+
+  // ListDir lists one directory of the mirror.
+  rpc ListDir(ListDirRequest) returns (ListDirResponse);
+
+  // GetFile returns one file's text.
+  rpc GetFile(GetFileRequest) returns (GetFileResponse);
+
+  // ---- pull requests, from the upstream ----
+
+  // GetPull returns a pull request's own facts.
+  rpc GetPull(GetPullRequest) returns (GetPullResponse);
+
+  // ListPullFiles returns what it changes, with per-file counts and patches.
+  rpc ListPullFiles(ListPullFilesRequest) returns (ListPullFilesResponse);
+
+  // GetPullDiff returns the whole change as one unified diff.
+  rpc GetPullDiff(GetPullDiffRequest) returns (GetPullDiffResponse);
+
+  // GetPullChecks returns CI status.
+  rpc GetPullChecks(GetPullChecksRequest) returns (GetPullChecksResponse);
+
+  // ---- issues ----
+
+  // ListIssues lists issues and/or pull requests. ONE CALL FOR BOTH, because GitHub numbers them in
+  // one sequence and the two lists are the same query with a different filter.
+  rpc ListIssues(ListIssuesRequest) returns (ListIssuesResponse);
+
+  // GetIssue returns an issue's own facts. It answers for a pull request too, and says which.
+  rpc GetIssue(GetIssueRequest) returns (GetIssueResponse);
+
+  // ListIssueComments returns its conversation, oldest first.
+  rpc ListIssueComments(ListIssueCommentsRequest) returns (ListIssueCommentsResponse);
+
+  // ---- CI runs ----
+
+  // ListRuns lists recent runs for a repository, newest first.
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
+
+  // GetRun returns one run's own facts.
+  rpc GetRun(GetRunRequest) returns (GetRunResponse);
+
+  // ListRunJobs returns where a run has got to: its jobs and each job's steps.
+  rpc ListRunJobs(ListRunJobsRequest) returns (ListRunJobsResponse);
+
+  // GetJobLog returns one job's log. A SEPARATE CALL because a run's logs are megabytes and a run
+  // has several jobs; fetching them with the run would make opening the page cost the whole log
+  // whether or not anybody read it.
+  rpc GetJobLog(GetJobLogRequest) returns (GetJobLogResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Shared shapes
+// ---------------------------------------------------------------------------
+
+// RepoSummary is one repository in a list.
+message RepoSummary {
+  string full_name = 1;
+  string description = 2;
+  bool private = 3;
+  bool archived = 4;
+  bool fork = 5;
+  string default_branch = 6;
+}
+
+// OrgSummary is one organisation.
+message OrgSummary {
+  string login = 1;
+  string description = 2;
+}
+
+// ReleaseSummary is one release as a list shows it. The body is included because a release IS its
+// notes — a list of tag names alone would send the reader elsewhere to find out what shipped.
+message ReleaseSummary {
+  string tag = 1;
+  string name = 2;
+  bool draft = 3;
+  bool prerelease = 4;
+  string published_at = 5;
+  string url = 6;
+  string body = 7;
+  int32 assets = 8;
+}
+
+// WorkflowSummary is one workflow definition.
+message WorkflowSummary {
+  int64 id = 1;
+  string name = 2;
+  string path = 3;
+  string state = 4;
+}
+
+// Ref is one browsable ref: a branch or a tag.
+message Ref {
+  string name = 1;
+  string commit = 2;
+  // "branch" or "tag".
+  string kind = 3;
+}
+
+// TreeEntry is one row of a directory listing.
+message TreeEntry {
+  string path = 1;
+  string name = 2;
+  bool dir = 3;
+  int64 size = 4;
+}
+
+// PullSummary is a pull request as its page shows it.
+message PullSummary {
+  int32 number = 1;
+  string title = 2;
+  string state = 3;
+  string author = 4;
+  string body = 5;
+  string head = 6;
+  string base = 7;
+  string url = 8;
+  bool draft = 9;
+  bool merged = 10;
+  string created = 11;
+}
+
+// FileChange is one file in a pull request's change.
+message FileChange {
+  string path = 1;
+  string status = 2;
+  int32 additions = 3;
+  int32 deletions = 4;
+  // The per-file diff. Empty is meaningful: patch_truncated says whether that is because the forge
+  // omitted it (binary, or too large) rather than because nothing changed.
+  string patch = 5;
+  bool patch_truncated = 6;
+}
+
+// CheckRow is one named check on a pull request.
+message CheckRow {
+  string name = 1;
+  string status = 2;
+}
+
+// IssueSummary is an issue as its page shows it.
+message IssueSummary {
+  int32 number = 1;
+  string title = 2;
+  string state = 3;
+  string body = 4;
+  string author = 5;
+  string url = 6;
+  repeated string labels = 7;
+  // Reported rather than hidden: GitHub numbers issues and pull requests in ONE sequence, so a
+  // reader who opens an issue route on a pull request should be told what they are looking at.
+  bool is_pull_request = 8;
+  int32 comments = 9;
+}
+
+// Comment is one message in an issue's conversation.
+//
+// `when` rather than `created`: the old handler emitted a field literally called `when` and the panel
+// reads it, so renaming it here would silently empty the timestamp on every comment.
+message Comment {
+  int64 id = 1;
+  string author = 2;
+  string body = 3;
+  string when = 4;
+}
+
+// RunSummary is one workflow run.
+message RunSummary {
+  int64 id = 1;
+  string name = 2;
+  // queued | in_progress | completed
+  string status = 3;
+  // success | failure | … (empty while running)
+  string conclusion = 4;
+  string branch = 5;
+  string event = 6;
+  string head_sha = 7;
+  string url = 8;
+  string created_at = 9;
+  int32 attempt = 10;
+  // Computed server-side rather than left to the UI: three places would otherwise each have to know
+  // that "completed with no conclusion" is a state that cannot happen but must not be guessed at.
+  bool done = 11;
+}
+
+// StepSummary is one step inside a job.
+message StepSummary {
+  string name = 1;
+  string status = 2;
+  string conclusion = 3;
+  int32 number = 4;
+}
+
+// JobSummary is one job of a run, with its steps.
+message JobSummary {
+  int64 id = 1;
+  string name = 2;
+  string status = 3;
+  string conclusion = 4;
+  string started_at = 5;
+  string url = 6;
+  repeated StepSummary steps = 7;
+  // Whether the log can be fetched at all: a forge publishes a job's log only once the job finishes,
+  // so a running job has nothing to show and a button for it would fail.
+  bool log_available = 8;
+}
+
+// ---------------------------------------------------------------------------
+// Requests and responses, in service order
+// ---------------------------------------------------------------------------
+
+message GetWhoamiRequest {}
+message GetWhoamiResponse {
+  string login = 1;
+}
+
+message ListOrgsRequest {}
+message ListOrgsResponse {
+  repeated OrgSummary orgs = 1;
+  int32 count = 2;
+}
+
+message ListReposRequest {
+  // Empty lists every organisation the caller can see.
+  string org = 1;
+}
+message ListReposResponse {
+  repeated RepoSummary repos = 1;
+  int32 count = 2;
+  // Echoed back, so a caller can tell which filter produced this list.
+  string org = 3;
+}
+
+message ListReleasesRequest {
+  string repo = 1;
+  // 0 means the server default (20), capped at 100.
+  int32 limit = 2;
+}
+message ListReleasesResponse {
+  repeated ReleaseSummary releases = 1;
+  int32 count = 2;
+}
+
+message ListWorkflowsRequest {
+  string repo = 1;
+}
+message ListWorkflowsResponse {
+  repeated WorkflowSummary workflows = 1;
+  int32 count = 2;
+}
+
+message ListMirroredRequest {
+  // The upstream repositories to check against the mirror.
+  repeated string repos = 1;
+}
+message ListMirroredResponse {
+  // Each upstream name mapped to its state in the mirror.
+  //
+  // THREE VALUES, NOT A BOOLEAN. "Exists" and "can be opened" are different: a repository created
+  // with no initial commit exists, answers 200, and has no branches and no tree — so a check that
+  // only asks whether it is there marks it openable and the reader gets an empty page. That is
+  // exactly what happened to two repositories this was found on.
+  map<string, MirrorState> mirrored = 1;
+}
+
+// MirrorState is what the mirror has for one repository.
+//
+// `UNSPECIFIED` IS THE ZERO VALUE BECAUSE PROTO3 REQUIRES IT, and it is ALSO the honest name for the
+// common case: a repository the mirror has never heard of is one nothing was asked about, or one the
+// forge answered nothing for. The server maps its own "missing" onto it. Naming the zero value
+// `MISSING` would have compiled — it does not, here, and that is the standard talking — but the
+// reason it is the zero value is that proto3 cannot tell "unset" from "the first enum member".
+enum MirrorState {
+  // Nothing was asked, or the forge answered nothing. The panel treats it as "not mirrored".
+  MIRROR_STATE_UNSPECIFIED = 0;
+  // The repository exists but has no commits, so there is nothing to browse.
+  MIRROR_STATE_EMPTY = 1;
+  // It exists and has at least one branch.
+  MIRROR_STATE_READY = 2;
+}
+
+message EstablishRequest {
+  // The upstream repository to mirror, as owner/name.
+  string repo = 1;
+}
+message EstablishResponse {
+  // The name that was ASKED FOR, echoed back so a caller can tell which request this answers.
+  string repo = 1;
+  // WHERE THE PANEL MUST NAVIGATE TO, which is not the name it asked about: the mirror is created
+  // under the forge account, and a caller that assumed the names matched would open a repository
+  // that does not exist.
+  string mirrored_as = 2;
+  string branch = 3;
+  string commit = 4;
+}
+
+message GetRepoRequest {
+  string repo = 1;
+}
+message GetRepoResponse {
+  string repo = 1;
+  // The first branch the forge lists. A repository with none is empty, and the panel says so rather
+  // than offering a branch picker with nothing in it.
+  string default_branch = 2;
+  repeated string branches = 3;
+  repeated string tags = 4;
+}
+
+message ListRefsRequest {
+  string repo = 1;
+}
+message ListRefsResponse {
+  repeated Ref refs = 1;
+  int32 count = 2;
+}
+
+message ListDirRequest {
+  string repo = 1;
+  // `branch`, because that is what the panel has and what a reader thinks in. The forge calls the
+  // same thing a `ref` — a branch, tag or commit — and accepting only that name meant the panel
+  // listed the default branch no matter which one was selected.
+  string branch = 2;
+  string dir = 3;
+}
+message ListDirResponse {
+  string dir = 1;
+  string branch = 2;
+  repeated TreeEntry entries = 3;
+  int32 count = 4;
+}
+
+message GetFileRequest {
+  string repo = 1;
+  string path = 2;
+  string branch = 3;
+}
+message GetFileResponse {
+  string path = 1;
+  string branch = 2;
+  string revision = 3;
+  string content = 4;
+  int64 size = 5;
+}
+
+message GetPullRequest {
+  string repo = 1;
+  int32 number = 2;
+}
+message GetPullResponse {
+  PullSummary pull = 1;
+}
+
+message ListPullFilesRequest {
+  string repo = 1;
+  int32 number = 2;
+}
+message ListPullFilesResponse {
+  repeated FileChange files = 1;
+  int32 count = 2;
+}
+
+message GetPullDiffRequest {
+  string repo = 1;
+  int32 number = 2;
+}
+message GetPullDiffResponse {
+  string diff = 1;
+}
+
+message GetPullChecksRequest {
+  string repo = 1;
+  int32 number = 2;
+}
+message GetPullChecksResponse {
+  string state = 1;
+  string sha = 2;
+  repeated CheckRow checks = 3;
+}
+
+message ListIssuesRequest {
+  string repo = 1;
+  // "issue" | "pr". EMPTY MEANS "issue", which is what the old route did — and it refused anything
+  // else rather than ignoring it, because a filter that silently does nothing looks like it worked.
+  string kind = 2;
+  // "open" | "closed" | "all".
+  string state = 3;
+  // 0 means the server default (30), capped at 100.
+  int32 limit = 4;
+}
+message ListIssuesResponse {
+  // Called `items`, not `issues`: the route answers for pull requests too, and the old field name said
+  // so. The panel reads `items`.
+  repeated IssueSummary items = 1;
+  int32 count = 2;
+  // Echoed back, so a caller can tell which filter produced this list.
+  string kind = 3;
+}
+
+message GetIssueRequest {
+  string repo = 1;
+  int32 number = 2;
+}
+message GetIssueResponse {
+  IssueSummary issue = 1;
+}
+
+message ListIssueCommentsRequest {
+  string repo = 1;
+  int32 number = 2;
+}
+message ListIssueCommentsResponse {
+  repeated Comment comments = 1;
+  int32 count = 2;
+}
+
+message ListRunsRequest {
+  string repo = 1;
+  // 0 means the server default (20), capped at 100.
+  int32 limit = 2;
+}
+message ListRunsResponse {
+  repeated RunSummary runs = 1;
+  int32 count = 2;
+}
+
+message GetRunRequest {
+  string repo = 1;
+  int64 id = 2;
+}
+message GetRunResponse {
+  RunSummary run = 1;
+}
+
+message ListRunJobsRequest {
+  string repo = 1;
+  int64 id = 2;
+}
+message ListRunJobsResponse {
+  repeated JobSummary jobs = 1;
+  int32 count = 2;
+}
+
+message GetJobLogRequest {
+  string repo = 1;
+  int64 job_id = 2;
+}
+message GetJobLogResponse {
+  string log = 1;
+  // The length, carried because the panel shows it and because a truncated log is otherwise
+  // indistinguishable from a short one.
+  int32 bytes = 2;
+}

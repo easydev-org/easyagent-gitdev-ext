@@ -3,6 +3,7 @@
 package main
 
 import (
+	"connectrpc.com/connect/v2/connecthttp"
 	"context"
 	"embed"
 	"fmt"
@@ -32,6 +33,12 @@ var manifestYAML []byte
 // uiFiles is the browser UI, embedded so the binary is self-contained: no asset directory to ship
 // alongside the image, and no chance of the UI and the API it calls drifting apart in a deployment.
 //
+// THE SOURCE IS ELSEWHERE NOW. The panel is easydev-org/easyagent-gitdev-ext-ui, built by that
+// repository's CI; ui/fetch-ui.sh brings the built bundle here and this embeds it. The reason for
+// still embedding it is the sentence above: two images could come up at different versions, and that
+// is the class of bug the split exists to remove, not to reintroduce one layer up.
+//
+//go:generate sh ../../ui/fetch-ui.sh
 //go:embed all:ui
 var uiFiles embed.FS
 
@@ -61,7 +68,13 @@ func uiMux(ver, agentURL string, pulls uihandler.PullSource, issues uihandler.Is
 	// Identity resolves a caller's bearer to a tenant by asking the agent, which owns the token
 	// table. Without this the UI API would have to trust `?tenant=`, i.e. let anyone read any
 	// tenant's data by naming it.
-	(&uihandler.Handler{
+	//
+	// THE API IS A CONNECT SERVICE NOW, not a set of JSON routes. Its contract lives in
+	// proto/ui/v1/ui.proto, the panel is generated from that same file, and a field the panel reads
+	// but the server does not send is a compile error rather than an empty page. The old routes twice
+	// disagreed with what the panel read (`Path` vs `path`), which rendered an empty file tree against
+	// data that was correct and present.
+	svc := &uihandler.ConnectService{
 		Identity: &uihandler.IdentityResolver{AgentURL: agentURL},
 		// Pull requests are the one remote read the UI makes: a page shows the CURRENT state, where a
 		// card replays the snapshot a tool returned.
@@ -73,7 +86,20 @@ func uiMux(ver, agentURL string, pulls uihandler.PullSource, issues uihandler.Is
 		// The MIRROR's pages. Same shape as Pulls: a function resolved per request, because the
 		// token and the server list live in configuration and can change while this pod runs.
 		Forge: forgeFor,
-	}).Register(mux, uiBase)
+	}
+	// THE CONNECT SERVICE LIVES UNDER /api, so the SDK's single APIPrefix covers it.
+	//
+	// connecthttp.Mount registers each procedure at its ABSOLUTE path — "/ui.v1.UiService/GetWhoami"
+	// — and MountUI has one APIPrefix, which is "/api". A procedure path outside it has no file
+	// extension, so the SPA fallback would answer it with index.html and the client would fail parsing
+	// HTML as protobuf, with no failing URL to point at.
+	//
+	// So the mux serves /api/ui.v1.UiService/… and STRIPS the /api before handing it to Connect, which
+	// then sees the path it expects. The alternative — a second APIPrefix in the SDK — would be a
+	// change to every extension for one extension's routing.
+	api := http.NewServeMux()
+	connecthttp.Mount(api, svc.NewServer(), connecthttp.WithReadMaxBytes(0))
+	mux.Handle("/api/", http.StripPrefix("/api", api))
 	return mux
 }
 
@@ -221,10 +247,17 @@ func main() {
 		// matters.
 		UI: &extension.UISpec{
 			Assets:      uiFiles,
-			StripPrefix: "ui",
+			// THE BUNDLE IS ui/dist, not ui. fetch-ui.sh unrolls the release tarball into ui/dist and
+			// leaves its own README and script beside it; a StripPrefix of "ui" would look for
+			// ui/index.html, find nothing, and serve 404s for every asset with no clue why.
+			StripPrefix: "ui/dist",
 			Base:        uiBase,
-			// /ext/gitdev/api/* belongs to the handlers, not the bundle. Without this the SPA fallback
-			// answers it with index.html, and the UI's fetch fails parsing HTML as JSON.
+			// TWO PREFIXES BELONG TO HANDLERS, NOT TO THE BUNDLE.
+			//
+			// `/api` is the probes. `/ui.v1` is the Connect service: its paths look like
+			// `/ext/gitdev/ui.v1.UiService/GetWhoami`, which has no file extension, so the SPA
+			// fallback would answer it with index.html — and the client would then fail parsing HTML
+			// as protobuf, with no failing URL to point at.
 			APIPrefix: "/api",
 			Title:     "Git",
 			// What the shelf says this is for. Declared HERE rather than in the manifest because it
