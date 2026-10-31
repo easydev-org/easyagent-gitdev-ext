@@ -206,7 +206,10 @@ jobs:
           # tools become callable, so this is the readiness signal that matters.
           ok=0
           for i in $(seq 1 45); do
-            if wget -q -O- http://127.0.0.1:8080/api/v1/version >/dev/null 2>&1; then
+            # THE PROBES LIVE UNDER THE MOUNT, not at the root. They answer at
+            # /ext/gitdev/api/v1/version, because everything else under /ext/gitdev is the SPA bundle.
+            # The check used the root path, so it could not pass however healthy the server was.
+            if wget -q -O- http://127.0.0.1:8080/ext/gitdev/api/v1/version >/dev/null 2>&1; then
               echo "gitdev-ext answering"; ok=1; break
             fi
             sleep 2
