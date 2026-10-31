@@ -1,9 +1,0 @@
-# Placeholder so `go build` works without a UI build.
-#
-# go:embed fails when its target directory is absent, and the real files only exist after the
-# frontend build (see the Dockerfile). Without this file a plain `go build ./...` — which the unit
-# CI job runs on every push — would fail on a clean checkout, for a reason unrelated to Go.
-#
-# The Docker build overwrites this directory (`COPY --from=ui /ui/dist`), so a released image holds
-# the real bundle. A local `go run` serves only this file, which is the honest behaviour: no UI was
-# built.
