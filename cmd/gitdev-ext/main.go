@@ -57,11 +57,19 @@ const uiBase = "/ext/gitdev"
 // looping under a probe that had worked before.
 func uiMux(ver, agentURL string, pulls uihandler.PullSource, issues uihandler.IssueSource, runs uihandler.RunSource, browse uihandler.BrowseSource, mirrored uihandler.MirroredSource, forgeFor uihandler.MirrorForgeFunc) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
+	// THE API LIVES UNDER uiBase, NOT AT THE ROOT.
+	//
+	// MountUI serves the SPA for everything under Base except exactly `Base + APIPrefix`. So
+	// "/api/v1/health" at the root is outside Base entirely — it reaches this mux untouched and answers
+	// fine — while "/ext/gitdev/api/v1/health" falls into the SPA fallback and comes back as
+	// index.html. The first version registered the probes at the root and they 404d for every caller
+	// that went through the mount, which is every caller.
+	apiRoot := uiBase + "/api"
+	mux.HandleFunc(apiRoot+"/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"name":"gitdev"}`))
 	})
-	mux.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(apiRoot+"/v1/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":"gitdev","version":"` + ver + `"}`))
 	})
@@ -87,19 +95,19 @@ func uiMux(ver, agentURL string, pulls uihandler.PullSource, issues uihandler.Is
 		// token and the server list live in configuration and can change while this pod runs.
 		Forge: forgeFor,
 	}
-	// THE CONNECT SERVICE LIVES UNDER /api, so the SDK's single APIPrefix covers it.
+	// THE CONNECT SERVICE LIVES UNDER THE SAME apiRoot, so MountUI's single APIPrefix covers it.
 	//
 	// connecthttp.Mount registers each procedure at its ABSOLUTE path — "/ui.v1.UiService/GetWhoami"
-	// — and MountUI has one APIPrefix, which is "/api". A procedure path outside it has no file
-	// extension, so the SPA fallback would answer it with index.html and the client would fail parsing
-	// HTML as protobuf, with no failing URL to point at.
+	// — with no prefix of its own. So the mux serves apiRoot + "/ui.v1.UiService/…" and STRIPS apiRoot
+	// before handing the request to Connect, which then sees the path it expects.
 	//
-	// So the mux serves /api/ui.v1.UiService/… and STRIPS the /api before handing it to Connect, which
-	// then sees the path it expects. The alternative — a second APIPrefix in the SDK — would be a
-	// change to every extension for one extension's routing.
+	// WITHOUT THIS PREFIX the procedure paths have no file extension, so the SPA fallback answers them
+	// with index.html and the client fails parsing HTML as protobuf, with no failing URL to point at.
+	// The alternative — a second APIPrefix in the SDK — would change every extension for one
+	// extension's routing.
 	api := http.NewServeMux()
 	connecthttp.Mount(api, svc.NewServer(), connecthttp.WithReadMaxBytes(0))
-	mux.Handle("/api/", http.StripPrefix("/api", api))
+	mux.Handle(apiRoot+"/", http.StripPrefix(apiRoot, api))
 	return mux
 }
 
