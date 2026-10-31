@@ -38,7 +38,7 @@ var manifestYAML []byte
 // still embedding it is the sentence above: two images could come up at different versions, and that
 // is the class of bug the split exists to remove, not to reintroduce one layer up.
 //
-//go:generate sh ../../ui/fetch-ui.sh
+//go:generate sh ./fetch-ui.sh
 //go:embed all:ui
 var uiFiles embed.FS
 

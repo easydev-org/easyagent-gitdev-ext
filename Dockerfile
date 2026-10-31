@@ -6,50 +6,45 @@
 # *.svc.cluster.local. A CI runner and a laptop build the same image; anything a particular
 # environment needs is supplied as a build-arg or by the container runtime.
 
-# The browser UI, built FIRST and copied into the Go tree before `go build`.
+# THE PANEL IS BUILT ELSEWHERE NOW, and fetched here.
 #
-# It is a build stage rather than committed output: a stale dist/ in the repository would be served
-# in place of the real one, and the failure looks like "the UI is wrong" rather than "the build is
-# wrong". Keeping the toolchain here also means a contributor needs nothing but Docker.
-FROM node:26-alpine AS ui
+# It used to be a node stage: copy ui/, npm ci, npm run build. ui/ is no longer source — the panel is
+# easydev-org/easyagent-gitdev-ext-ui, built by its own CI, published as ui.tar.gz on a release. So
+# this stage downloads that tarball and unrolls it, which also means the Go build no longer needs Node.
+#
+# THE VERSION IS PINNED BY UI_VERSION. A moving target would make an image unreproducible, and the
+# whole point of a release asset is that it has a tag to pin.
+#
+# The script is committed at cmd/gitdev-ext/ui/fetch-ui.sh, next to the //go:embed that consumes its
+# output, because go:embed cannot reach outside the package directory.
+FROM alpine:3.24 AS ui
+RUN apk add --no-cache ca-certificates tar gzip curl
 WORKDIR /ui
-# Bump this to force `npm run build` to re-run.
+ARG UI_VERSION=v0.1.4
+COPY cmd/gitdev-ext/ui/fetch-ui.sh ./fetch-ui.sh
+RUN UI_VERSION="${UI_VERSION}" sh ./fetch-ui.sh
+# FAIL THE BUILD, NOT THE DEPLOY, IF THE BUNDLE IS EMPTY.
 #
-# Docker caches a layer on its inputs; when a source file changes the COPY invalidates it, but when
-# only the BUILD CACHE is stale (a restored gha cache from an earlier run) the old dist/ can be
-# reused. It is rare and it is invisible: the image builds, the UI loads, and it behaves like the
-# previous version.
-ARG UI_BUILD=2
-RUN echo "ui build ${UI_BUILD}"
-# The lockfile is committed (see .gitignore: node_modules is not, the lock is). `npm ci` requires it,
-# so the image is reproducible and a drift between package.json and the lock fails here instead of
-# resolving something new at build time.
-COPY ui/package.json ui/package-lock.json ./
-RUN npm ci --no-audit --no-fund
-COPY ui/ ./
-RUN npm run build
-# Fail the BUILD, not the deploy, if the bundle is empty.
-#
-# go:embed of an empty directory is legal, so a UI stage that produced nothing yields a binary with
-# no assets and an extension that 404s every UI path — with a green CI. That is exactly what
-# happened: the `ui` job passed (it builds the bundle separately) while the image shipped without it.
-# Checking here makes the failure land where the mistake is.
-RUN test -f /ui/dist/index.html || (echo "FATAL: vite produced no index.html" >&2; ls -la /ui; exit 1)
-# And that the bundle is not a stale layer: this marker only exists in the current API client.
-#
-# A cached `npm run build` ships a bundle that looks fine and behaves like the previous version,
-# which is indistinguishable from "the fix did not work" when all you have is a browser. Greping a
-# marker turns that into a build failure that names the marker.
-RUN grep -q 'agent.token' /ui/dist/assets/*.js || (echo "FATAL: the built bundle is STALE (no agent.token in dist); the build layer was cached" >&2; ls -la /ui/dist/assets; exit 1)
+# go:embed of an empty directory is legal, so a UI stage that produced nothing yields a binary with no
+# assets and an extension that 404s every UI path — with a green CI. That is exactly what happened
+# once already, when a job that built the bundle separately passed while the image shipped without it.
+RUN test -f /ui/dist/index.html || (echo "FATAL: the bundle has no index.html" >&2; ls -la /ui; exit 1)
+# And that it is the bundle we asked for, not a cached layer from another version.
+RUN test "$(cat /ui/.version)" = "${UI_VERSION}" || (echo "FATAL: fetched $(cat /ui/.version), wanted ${UI_VERSION}" >&2; exit 1)
 
 FROM golang:1.26-alpine AS build
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
-# go:embed cannot reach outside the package directory, so the built UI is placed where
+# go:embed cannot reach outside the package directory, so the fetched bundle is placed where
 # cmd/gitdev-ext/ui declares it. See the //go:embed directive in main.go.
-COPY --from=ui /ui/dist ./cmd/gitdev-ext/ui
+#
+# ONLY dist/ AND .version ARE COPIED. The stage's work directory also holds the script and a tarball;
+# embedding those would put a shell script inside the served asset tree.
+RUN rm -rf ./cmd/gitdev-ext/ui/dist
+COPY --from=ui /ui/dist ./cmd/gitdev-ext/ui/dist
+COPY --from=ui /ui/.version ./cmd/gitdev-ext/ui/.version
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/gitdev-ext ./cmd/gitdev-ext
