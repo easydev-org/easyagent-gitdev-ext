@@ -1,0 +1,10 @@
+version: v2
+# The Go side of the UI contract. The TypeScript side is generated in the UI's own repository, from
+# this same file — which is why a copy of the .proto lives there and CI keeps the two byte-identical.
+plugins:
+  - local: protoc-gen-go
+    out: ../gen
+    opt: paths=source_relative
+  - local: protoc-gen-connect-go
+    out: ../gen
+    opt: paths=source_relative

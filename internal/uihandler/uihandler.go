@@ -13,131 +13,16 @@ package uihandler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"strings"
 
 	"github.com/easydev-org/easyagent-gitdev-ext/internal/forge"
 )
 
-// Handler answers the UI's JSON requests.
-type Handler struct {
-	// Identity resolves the caller's bearer to a tenant. REQUIRED: without it every request is
-	// refused, because the alternative is trusting a `?tenant=` parameter.
-	Identity *IdentityResolver
-	// Pulls reads pull requests from GitHub. Optional: a deployment without a GitHub token simply
-	// has no PR pages, rather than failing at call time.
-	Pulls PullSource
-	// Issues reads issues from GitHub. Optional, like Pulls: a deployment with no token has no issue
-	// pages rather than failing at call time.
-	Issues IssueSource
-	// Runs reads CI runs from GitHub. Optional: without it there are no run pages.
-	Runs RunSource
-	// Browse reads the ACCOUNT-level view: which repositories and organisations exist, and a
-	// repository's releases and workflows. Optional: without it the panel has no starting page.
-	Browse BrowseSource
-	// Mirrored answers which repositories the MIRROR has. Optional: without it the home page cannot
-	// tell a clickable row from one that would 404.
-	Mirrored MirroredSource
-	// Forge builds a client for one MIRROR repository in the caller's scope. Optional: a deployment
-	// with no mirror configured has no file-browsing pages.
-	//
-	// A FUNCTION rather than a client because the token and the repository come from extension
-	// CONFIG, which can change while this process runs, and because the client is per-tenant.
-	Forge MirrorForgeFunc
-}
-
-// MirrorForgeFunc builds a forge client for one repository in one caller's scope.
-type MirrorForgeFunc func(ctx context.Context, session, tenant, repo string) (*forge.Client, error)
-
-// who resolves the caller's tenant, or an error the handler must turn into 401.
+// MirrorForgeFunc builds a forge client for one MIRROR repository in one caller's scope.
 //
-// TENANT IS NOT TAKEN FROM THE REQUEST. It is resolved from the bearer token, because a query
-// parameter is caller-controlled: `?tenant=victim` would otherwise read another tenant's data. That
-// was a real hole, and it is why `who()` exists.
-func (h *Handler) who(r *http.Request) (string, error) {
-	if h.Identity == nil {
-		// Failing closed: a deployment that forgot to wire identity must not serve data.
-		return "", errors.New("identity is not configured")
-	}
-	b := bearerOf(r)
-	return h.Identity.Tenant(r.Context(), b)
-}
-
-// bearerOf reads the Authorization header, tolerating the case variations proxies introduce.
-func bearerOf(r *http.Request) string {
-	v := r.Header.Get("Authorization")
-	if len(v) > 7 && strings.EqualFold(v[:7], "bearer ") {
-		return strings.TrimSpace(v[7:])
-	}
-	return ""
-}
-
-/**
- * Register mounts the panel's API under `prefix`.
- *
- * The prefix is part of every route rather than stripped by the caller: a host that proxies this
- * mount hands the handler the request it received, path intact. Registering bare "/pull" would never
- * match "/ext/gitdev/api/pull" — a mistake that cost a whole debugging session on another extension.
- */
-func (h *Handler) Register(mux *http.ServeMux, prefix string) {
-	p := strings.TrimSuffix(prefix, "/") + "/api/"
-	mux.HandleFunc(p+"pull", h.pull)
-	mux.HandleFunc(p+"pull/files", h.pullFiles)
-	mux.HandleFunc(p+"pull/diff", h.pullDiff)
-	mux.HandleFunc(p+"pull/checks", h.pullChecks)
-
-	// The issue page. GitHub numbers issues and pull requests in one sequence, so this route can
-	// answer for either — and the page says which, rather than pretending an issue has code.
-	if h.Issues != nil {
-		mux.HandleFunc(p+"issues", h.issues)
-		mux.HandleFunc(p+"issue", h.issue)
-		mux.HandleFunc(p+"issue/comments", h.issueComments)
-	}
-
-	// CI runs: the list, one run's jobs, and one job's log.
-	//
-	// The log is a SEPARATE route on purpose — it is the only one of the three that is not cheap, and
-	// a reader opens it for one job at a time.
-	if h.Runs != nil {
-		mux.HandleFunc(p+"runs", h.runs)
-		mux.HandleFunc(p+"run", h.run)
-		mux.HandleFunc(p+"run/jobs", h.runJobs)
-		mux.HandleFunc(p+"run/job/log", h.runJobLog)
-	}
-
-	// The layer ABOVE a repository: the pages a reader reaches BEFORE one is chosen.
-	//
-	// Without these the panel had no door — every page needed a repository to name, so opening it
-	// gave an instruction and nothing to click.
-	if h.Browse != nil {
-		mux.HandleFunc(p+"repos", h.repos)
-		mux.HandleFunc(p+"orgs", h.orgs)
-		mux.HandleFunc(p+"whoami", h.whoami)
-		mux.HandleFunc(p+"releases", h.releases)
-		mux.HandleFunc(p+"workflows", h.workflows)
-		// Which of those repositories the mirror actually has — the two sources are different
-		// systems, and the panel compares them so a reader does not find out by clicking.
-		if h.Mirrored != nil {
-			mux.HandleFunc(p+"mirrored", h.mirrored)
-			// A POST: it creates a repository on the forge. Registered beside the read that says
-			// whether one exists, because they answer the same question — "is it there?" — with
-			// "no" and "make it so".
-			mux.HandleFunc(p+"establish", h.establish)
-		}
-	}
-
-	// The MIRROR's own pages: browse the repository a change is being made in.
-	//
-	// Registered here rather than in a separate extension because the panel is one place: a reader
-	// writing a change looks at a file, and a reader reviewing one looks at a pull request, and they
-	// are the same person a minute apart.
-	mux.HandleFunc(p+"repo", h.repo)
-	mux.HandleFunc(p+"tree", h.tree)
-	mux.HandleFunc(p+"file", h.file)
-	mux.HandleFunc(p+"refs", h.refs)
-}
+// A FUNCTION rather than a client because the token and the repository come from extension CONFIG,
+// which can change while this process runs, and because the client is per-tenant.
+type MirrorForgeFunc func(ctx context.Context, session, tenant, repo string) (*forge.Client, error)
 
 // tenantKey carries the resolved tenant through a request's context, so a PullSource — which takes a
 // plain context — can resolve the token without re-authenticating. The pull handlers put it there
@@ -151,18 +36,4 @@ func tenantFrom(ctx context.Context) (string, error) {
 		return t, nil
 	}
 	return "", errors.New("no tenant on the request context")
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func writeErr(w http.ResponseWriter, err error) {
-	status := http.StatusInternalServerError
-	if errors.Is(err, ErrUnauthenticated) {
-		status = http.StatusUnauthorized
-	}
-	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
