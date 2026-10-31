@@ -1,8 +1,13 @@
-# The built UI: produced by the Dockerfile's `ui` stage and copied in for go:embed. Never committed,
-# because a stale bundle served in place of the real one looks like "the UI is wrong" rather than
-# "the build is wrong".
-cmd/gitdev-ext/ui/*
-!cmd/gitdev-ext/ui/.gitkeep
+# The built UI bundle. NEVER COMMITTED: it is fetched from the panel's release by fetch-ui.sh, and a
+# stale dist/ served in place of the real one looks like "the UI is wrong" rather than "the build is
+# wrong".
+#
+# THE DIRECTORY ITSELF IS NO LONGER IGNORED, only its contents — fetch-ui.sh and README.md live there
+# and ARE source. The old rule ignored `cmd/gitdev-ext/ui/*` wholesale, which then also hid the script
+# from CI and from the Docker build: both failed with "no such file", which reads as a missing file
+# rather than a .gitignore rule that outlived its design.
+cmd/gitdev-ext/ui/dist/
+cmd/gitdev-ext/ui/.version
 
 ui/node_modules/
 ui/dist/
