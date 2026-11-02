@@ -67,7 +67,7 @@ func runIDOf(jobID string) string {
  * one is not.
  */
 type MailboxPayload struct {
-	MessageID string `json:"messageId"`
+	MessageID string `json:"message_id"`
 	Text      string `json:"text"`
 }
 
