@@ -234,7 +234,7 @@ func main() {
 				return nil
 			}
 			return ext.PublishMailboxEvent(ctx, tenant, session, "trigger",
-				tools.NewMailboxPayload(jobID, title, state, exit), "gitdev")
+				tools.NewMailboxPayload(jobID, title, state, exit), "system:gitdev")
 		},
 	})
 
