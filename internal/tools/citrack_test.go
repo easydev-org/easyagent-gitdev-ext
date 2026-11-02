@@ -105,13 +105,18 @@ func TestJobTextOmitsAnAbsentExitCode(t *testing.T) {
 }
 
 // THE MESSAGE ID IS DERIVED, so a redelivered wake folds once rather than twice.
+//
+// AND THE PAYLOAD IS A MAP, because `PublishMailboxEvent` runs it through structpb, which cannot take
+// a Go struct — the conversion fails, the SDK folds it to null, and the wake arrives with no body.
 func TestMailboxPayloadIdIsDerivedFromTheRun(t *testing.T) {
 	a := NewMailboxPayload("ci-run.1234", "build", job.StateDone, intp(0))
 	b := NewMailboxPayload("ci-run.1234", "build", job.StateDone, intp(0))
-	if a.MessageID != b.MessageID {
-		t.Fatalf("the same run produced two ids: %q and %q", a.MessageID, b.MessageID)
+	id, _ := a["message_id"].(string)
+	if id == "" || id != b["message_id"] {
+		t.Fatalf("the same run produced two ids: %q and %q", id, b["message_id"])
 	}
-	if a.Text == "" {
+	text, _ := a["text"].(string)
+	if text == "" {
 		t.Fatal("a wake with no text folds an empty message into the conversation")
 	}
 }
