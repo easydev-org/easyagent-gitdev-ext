@@ -14,6 +14,7 @@ import (
 
 	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/extension"
+	"github.com/easydev-org/easybus-sdk/job"
 	"github.com/easydev-org/easybus-sdk/manifest"
 	"github.com/easydev-org/easybus-sdk/transport/nats"
 
@@ -177,6 +178,20 @@ func main() {
 	// Workspaces are plain directories on this pod's disk. No database: a workspace is a git
 	// checkout, and git already knows how to be one.
 	var ext *extension.Extension
+	/**
+	 * THE SHARED JOB LIST, AND THE SWEEPER THAT FINISHES IT.
+	 *
+	 * A workflow run outlives the call that started it, and the answer arrives minutes later; the
+	 * list is where `job-list`, `job-wait`, and any panel look for it. Without this a dispatched run
+	 * is an id the caller has to poll for, which is what the tools used to tell it to do.
+	 *
+	 * THE SWEEPER IS THE SAME CODE EVERY EXTENSION RUNS. It watches the whole bucket and records a
+	 * job as lost when its owner stops renewing — so whichever process is still alive is the one
+	 * that notices a dead one.
+	 */
+	jobs := job.NewRegistry(bus)
+	go job.NewSweeper(jobs).Run(context.Background())
+
 	handlers := tools.Registry(tools.Deps{
 		// Object storage for gh-artifact-download. An artifact archive is arbitrary in size, so
 		// it is stored under a tenant-scoped key and referred to by name — never returned inline.
@@ -206,6 +221,20 @@ func main() {
 				return nil
 			}
 			return ext.ReportProgress(ctx, tenant, callID, p)
+		},
+		Jobs: jobs,
+		/**
+		 * THE WAKE, A CLOSURE OVER `ext` FOR THE SAME REASON AS ITS NEIGHBOURS: the extension is
+		 * built after this struct, because it needs the tool specs this produces. Reading the
+		 * variable when a run ends is always after start-up has finished; the nil check is for the
+		 * window where that is not yet true.
+		 */
+		NotifyJobDone: func(ctx context.Context, tenant, session, jobID, title string, state job.State, exit *int) error {
+			if ext == nil {
+				return nil
+			}
+			return ext.PublishMailboxEvent(ctx, tenant, session, "trigger",
+				tools.NewMailboxPayload(jobID, title, state, exit), "gitdev")
 		},
 	})
 
