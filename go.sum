@@ -60,8 +60,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davidmz/go-pageant v1.0.2 h1:bPblRCh5jGU+Uptpz6LgMZGD5hJoOt7otgT454WvHn0=
 github.com/davidmz/go-pageant v1.0.2/go.mod h1:P2EDDnMqIwG5Rrp05dTRITj9z2zpGcD9efWSkTNKLIE=
-github.com/easydev-org/easybus-sdk v0.9.20 h1:yTfl7ribkAWrpj0rQeQO03wAMZriubpj/OFJ4Z/u3Q8=
-github.com/easydev-org/easybus-sdk v0.9.20/go.mod h1:0Jx5Nxc922MVvolEg/SS5coPLO1s/H6JdLz5GQGyrio=
+github.com/easydev-org/easybus-sdk v0.9.21 h1:m89Ir/aKE9b7EmMPZnkQPSn5NxQxky7bzBTcM8zj0+o=
+github.com/easydev-org/easybus-sdk v0.9.21/go.mod h1:0Jx5Nxc922MVvolEg/SS5coPLO1s/H6JdLz5GQGyrio=
 github.com/elazarl/goproxy v1.7.2 h1:Y2o6urb7Eule09PjlhQRGNsqRfPmYI3KKQLFpCAV3+o=
 github.com/elazarl/goproxy v1.7.2/go.mod h1:82vkLNir0ALaW14Rc399OTTjyNREgmdL2cVoIbS6XaE=
 github.com/emirpasic/gods v1.18.1 h1:FXtiHYKDGKCW2KzwZKx0iC0PQmdlorYgdFG9jPXJ1Bc=
