@@ -114,17 +114,24 @@ func (t *toolset) runRerun(ctx context.Context, args map[string]any, session, te
 		if rerr := c.RerunFailedJobs(ctx, runID); rerr != nil {
 			return extension.ToolResultData{}, errFailed("%s run %d: %v", repo, runID, rerr)
 		}
+		/**
+		 * A RERUN IS A NEW ATTEMPT ON THE SAME RUN, so the run id is unchanged and the existing
+		 * entry is simply tracked again — the status goes back to `queued` and the follower, which
+		 * had already stopped on the previous ending, is restarted by this call.
+		 */
+		t.trackRun(ctx, c, repo, runID, fmt.Sprintf("run %d (rerun)", runID), session, tenant)
 		return extension.ToolResultData{
 			Content: fmt.Sprintf("rerunning the failed jobs of run %d\n\n"+
-				"A rerun starts a new ATTEMPT on the same run; watch it with gh-run-jobs", runID),
+				"A rerun starts a new ATTEMPT on the same run. You will be notified when it finishes.", runID),
 			Data: map[string]any{"run": runID, "failed_only": true},
 		}, nil
 	}
 	if rerr := c.RerunRun(ctx, runID); rerr != nil {
 		return extension.ToolResultData{}, errFailed("%s run %d: %v", repo, runID, rerr)
 	}
+	t.trackRun(ctx, c, repo, runID, fmt.Sprintf("run %d (rerun)", runID), session, tenant)
 	return extension.ToolResultData{
-		Content: fmt.Sprintf("rerunning the whole of run %d", runID),
+		Content: fmt.Sprintf("rerunning the whole of run %d\n\nYou will be notified when it finishes.", runID),
 		Data:    map[string]any{"run": runID, "failed_only": false},
 	}, nil
 }
@@ -143,10 +150,27 @@ func (t *toolset) runCancel(ctx context.Context, args map[string]any, session, t
 	if cerr := c.CancelRun(ctx, runID); cerr != nil {
 		return extension.ToolResultData{}, errFailed("%s run %d: %v", repo, runID, cerr)
 	}
+	/**
+	 * TRACK IT IF IT IS NOT ALREADY TRACKED. A caller may cancel a run it found with gh-run-list
+	 * rather than one it dispatched, and that run has no entry in the shared list — so the sentence
+	 * "you will be notified" would be a promise nothing keeps.
+	 *
+	 * IDEMPOTENT: `Start` overwrites an existing entry with the same id, which is the right outcome
+	 * either way — the run is now known to be interesting to this conversation.
+	 */
+	t.trackRun(ctx, c, repo, runID, fmt.Sprintf("run %d (cancel requested)", runID), session, tenant)
 	return extension.ToolResultData{
-		Content: fmt.Sprintf("cancelling run %d\n\n"+
+		/**
+		 * THE REQUEST WAS ACCEPTED; THE RUN IS NOT STOPPED YET, AND THE TEXT SAYS SO.
+		 *
+		 * GitHub lets the step in progress finish, so "cancelled" here would be a claim about the
+		 * machine that is not true yet. What IS true is that the request landed — and the tracked
+		 * job will report when the run actually ends, which is why this no longer tells the caller
+		 * to poll.
+		 */
+		Content: fmt.Sprintf("cancel requested for run %d\n\n"+
 			"Cancellation is a REQUEST, not an instant stop: GitHub lets the step in progress finish. "+
-			"Poll gh-run-jobs until the job reports completed.", runID),
+			"You will be notified when the run actually ends.", runID),
 		Data: map[string]any{"run": runID},
 	}, nil
 }
@@ -186,7 +210,15 @@ func (t *toolset) runDispatch(ctx context.Context, args map[string]any, session,
 	var b strings.Builder
 	fmt.Fprintf(&b, "dispatched %s on %s\n", workflow, ref)
 	if runID > 0 {
-		fmt.Fprintf(&b, "run: %d\n%s\n\nwatch it with gh-run-jobs run=%d", runID, url, runID)
+		/**
+		 * THE RUN IS TRACKED FROM HERE, so nobody has to watch it.
+		 *
+		 * This used to say "watch it with gh-run-jobs", which is an instruction to poll — the
+		 * caller would have to spend turns asking whether a build it just started had finished.
+		 * The job list answers that once, when the answer exists.
+		 */
+		t.trackRun(ctx, c, repo, runID, workflow+" on "+ref, session, tenant)
+		fmt.Fprintf(&b, "run: %d\n%s\n\nYou will be notified when it finishes; do not poll for it.", runID, url)
 	} else {
 		// No run id came back: say that, rather than printing "run 0".
 		b.WriteString("GitHub accepted the dispatch but returned no run id; find it with gh-run-list\n")
