@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/easydev-org/easybus-sdk/job"
@@ -74,3 +75,43 @@ func TestSuccessNeedsNoReason(t *testing.T) {
 }
 
 func intp(v int) *int { return &v }
+
+/**
+ * THE WAKE POINTS AT THE TOOL THAT READS THE LOG, WITH THE ARGUMENT IT WANTS.
+ *
+ * The job id is "ci-run.1234" and `gh-run-log` takes `run=1234`. A hint that repeated the job id would
+ * send the caller to a tool with an argument that does not fit it — a puzzle rather than a pointer.
+ */
+func TestJobTextNamesTheRunAndPointsAtTheLog(t *testing.T) {
+	got := JobText("ci-run.1234", "build on main", job.StateDone, intp(1))
+	for _, want := range []string{"ci-run.1234", `state="done"`, `exit="1"`, `title="build on main"`, "gh-run-log", "run 1234"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the wake is missing %q:\n%s", want, got)
+		}
+	}
+	// AND IT MUST NOT CONTRADICT THE EXIT CODE by calling a non-zero one a failure in prose: the
+	// code carries the verdict.
+	if strings.Contains(strings.ToLower(got), "failed") {
+		t.Errorf("a done run must not be described as failed:\n%s", got)
+	}
+}
+
+func TestJobTextOmitsAnAbsentExitCode(t *testing.T) {
+	// A CANCELLED RUN HAS NO EXIT CODE, and rendering "exit 0" would invent a success.
+	got := JobText("ci-run.7", "build", job.StateCancelled, nil)
+	if strings.Contains(got, "exit=") {
+		t.Errorf("a run with no exit code rendered one:\n%s", got)
+	}
+}
+
+// THE MESSAGE ID IS DERIVED, so a redelivered wake folds once rather than twice.
+func TestMailboxPayloadIdIsDerivedFromTheRun(t *testing.T) {
+	a := NewMailboxPayload("ci-run.1234", "build", job.StateDone, intp(0))
+	b := NewMailboxPayload("ci-run.1234", "build", job.StateDone, intp(0))
+	if a.MessageID != b.MessageID {
+		t.Fatalf("the same run produced two ids: %q and %q", a.MessageID, b.MessageID)
+	}
+	if a.Text == "" {
+		t.Fatal("a wake with no text folds an empty message into the conversation")
+	}
+}
