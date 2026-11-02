@@ -50,6 +50,7 @@ func (t *toolset) trackRun(ctx context.Context, c *ghclient.Client, repo string,
 		Kind:    CIKind,
 		Title:   title,
 		ExtID:   "gitdev",
+		Tenant:  tenant,
 		Session: session,
 		/**
 		 * REQUEST, NOT KILL. Cancelling a GitHub run sets a flag; the step in progress finishes
