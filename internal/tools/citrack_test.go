@@ -3,8 +3,6 @@ package tools
 import (
 	"strings"
 	"testing"
-
-	"github.com/easydev-org/easybus-sdk/job"
 )
 
 /**
@@ -17,19 +15,19 @@ import (
 func TestRunOutcomeMapsConclusions(t *testing.T) {
 	for _, tc := range []struct {
 		conclusion string
-		state      job.State
+		state      string
 		exit       *int
 	}{
 		// A GREEN BUILD AND A RED ONE ARE THE SAME STATE AND DIFFERENT CODES. Anything reading this
 		// has to look at the code, which is where the answer lives.
-		{"success", job.StateDone, intp(0)},
-		{"failure", job.StateDone, intp(1)},
-		{"timed_out", job.StateDone, intp(124)},
+		{"success", "done", intp(0)},
+		{"failure", "done", intp(1)},
+		{"timed_out", "done", intp(124)},
 		// CANCELLED IS ITS OWN STATE, because the work did not finish and no process exited.
-		{"cancelled", job.StateCancelled, nil},
-		{"skipped", job.StateDone, intp(0)},
+		{"cancelled", "cancelled", nil},
+		{"skipped", "done", intp(0)},
 		// WAITING ON A PERSON: the run did not fail, and no job produced a code.
-		{"action_required", job.StateDone, nil},
+		{"action_required", "done", nil},
 	} {
 		state, exit := runOutcome(tc.conclusion)
 		if state != tc.state {
@@ -55,7 +53,7 @@ func TestRunOutcomeMapsConclusions(t *testing.T) {
  */
 func TestAnUnknownConclusionCarriesNoExitCode(t *testing.T) {
 	state, exit := runOutcome("something_github_added")
-	if state != job.StateDone {
+	if state != "done" {
 		t.Fatalf("state = %q, want done", state)
 	}
 	if exit != nil {
@@ -83,7 +81,7 @@ func intp(v int) *int { return &v }
  * send the caller to a tool with an argument that does not fit it — a puzzle rather than a pointer.
  */
 func TestJobTextNamesTheRunAndPointsAtTheLog(t *testing.T) {
-	got := JobText("ci-run.1234", "build on main", job.StateDone, intp(1))
+	got := JobText("ci-run.1234", "build on main", "done", intp(1), "")
 	for _, want := range []string{"ci-run.1234", `state="done"`, `exit="1"`, `title="build on main"`, "gh-run-log", "run 1234"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the wake is missing %q:\n%s", want, got)
@@ -98,7 +96,7 @@ func TestJobTextNamesTheRunAndPointsAtTheLog(t *testing.T) {
 
 func TestJobTextOmitsAnAbsentExitCode(t *testing.T) {
 	// A CANCELLED RUN HAS NO EXIT CODE, and rendering "exit 0" would invent a success.
-	got := JobText("ci-run.7", "build", job.StateCancelled, nil)
+	got := JobText("ci-run.7", "build", "cancelled", nil, "")
 	if strings.Contains(got, "exit=") {
 		t.Errorf("a run with no exit code rendered one:\n%s", got)
 	}
@@ -109,8 +107,8 @@ func TestJobTextOmitsAnAbsentExitCode(t *testing.T) {
 // AND THE PAYLOAD IS A MAP, because `PublishMailboxEvent` runs it through structpb, which cannot take
 // a Go struct — the conversion fails, the SDK folds it to null, and the wake arrives with no body.
 func TestMailboxPayloadIdIsDerivedFromTheRun(t *testing.T) {
-	a := NewMailboxPayload("ci-run.1234", "build", job.StateDone, intp(0))
-	b := NewMailboxPayload("ci-run.1234", "build", job.StateDone, intp(0))
+	a := NewMailboxPayload("ci-run.1234", "build", "done", intp(0), "")
+	b := NewMailboxPayload("ci-run.1234", "build", "done", intp(0), "")
 	id, _ := a["message_id"].(string)
 	if id == "" || id != b["message_id"] {
 		t.Fatalf("the same run produced two ids: %q and %q", id, b["message_id"])
@@ -118,5 +116,33 @@ func TestMailboxPayloadIdIsDerivedFromTheRun(t *testing.T) {
 	text, _ := a["text"].(string)
 	if text == "" {
 		t.Fatal("a wake with no text folds an empty message into the conversation")
+	}
+}
+
+/**
+ * THE CONCLUSION SURVIVES INTO THE WAKE, because nothing else carries it any more.
+ *
+ * `timed_out`, `action_required` and `skipped` are all `done` — a state says why work stopped, not
+ * what the ending was worth. That difference used to travel in a `Reason` field on the shared
+ * job-list entry; the entry is gone, so the wake is the only place it can live. Losing it here would
+ * turn "waiting for a person to approve it" into the same message as "the build went green".
+ */
+func TestTheWakeCarriesTheConclusion(t *testing.T) {
+	for _, tc := range []struct{ conclusion, want string }{
+		{"timed_out", "the run exceeded its time limit"},
+		{"action_required", "waiting for a person"},
+		{"failure", "one or more jobs failed"},
+		{"cancelled", "the run was cancelled"},
+	} {
+		state, exit := runOutcome(tc.conclusion)
+		text, _ := NewMailboxPayload("ci-run.9", "build", state, exit,
+			conclusionReason(tc.conclusion))["text"].(string)
+		if text == "" {
+			t.Fatalf("%s: the wake has no text", tc.conclusion)
+		}
+		if !strings.Contains(text, tc.want) {
+			t.Errorf("%s: the wake does not say %q — GitHub's distinction was lost:\n%s",
+				tc.conclusion, tc.want, text)
+		}
 	}
 }

@@ -1,10 +1,6 @@
 package tools
 
-import (
-	"fmt"
-
-	"github.com/easydev-org/easybus-sdk/job"
-)
+import "fmt"
 
 /**
  * JobText renders the message a finished run leaves in the conversation.
@@ -18,26 +14,35 @@ import (
  * recognise the next — a wake and a `job-wait` return are read the same way regardless of who ran the
  * work.
  */
-func JobText(jobID, title string, state job.State, exit *int) string {
+func JobText(jobID, title string, state string, exit *int, reason string) string {
 	exitAttr := ""
 	if exit != nil {
 		exitAttr = fmt.Sprintf(" exit=%q", fmt.Sprintf("%d", *exit))
 	}
 	var how string
 	switch state {
-	case job.StateDone:
+	case "done":
 		// THE EXIT CODE CARRIES THE VERDICT, so this sentence does not. `failure` is `done` with
 		// code 1 — see runOutcome — and saying "the run failed" here would repeat a judgement the
 		// job deliberately leaves to the code.
 		how = "The run finished."
-	case job.StateCancelled:
+	case "cancelled":
 		how = "The run was cancelled."
-	case job.StateLost:
+	case "lost":
 		// NOT PRODUCED HERE — a sweeper writes it after this process stops renewing. Rendered anyway
 		// so an extension that comes back to its own job can describe it.
 		how = "The run stopped being reported; its result is unknown."
 	default:
 		how = "The run reported a state this reader does not recognise."
+	}
+	/**
+	 * THE REASON CARRIES WHAT THE STATE CANNOT. GitHub distinguishes `timed_out`, `action_required`,
+	 * `skipped` and `failure`, and all four are `done` here because a state says only why work
+	 * stopped, not what the ending was worth. The conclusion is the only place those differences
+	 * survive — it used to travel in a `Reason` field on the job-list entry, and that entry is gone.
+	 */
+	if reason != "" {
+		how += " " + reason + "."
 	}
 	return fmt.Sprintf(
 		"<job id=%q state=%q%s title=%q>\n%s\nUse gh-run-log with run %s to read what it produced.\n</job>",
@@ -70,11 +75,11 @@ func runIDOf(jobID string) string {
 // SNAKE_CASE because that is what the agent's WakePayload decodes; a mismatch silently falls back to
 // the mailbox row's own id, which is fresh on every delivery and so defeats the idempotence a derived
 // id exists for.
-func NewMailboxPayload(jobID, title string, state job.State, exit *int) map[string]any {
+func NewMailboxPayload(jobID, title string, state string, exit *int, reason string) map[string]any {
 	return map[string]any{
 		// DERIVED FROM THE JOB, not generated: a run has one ending, so a wake about it should fold
 		// at most once however many times it is delivered.
 		"message_id": "job-done-" + jobID,
-		"text":       JobText(jobID, title, state, exit),
+		"text":       JobText(jobID, title, state, exit, reason),
 	}
 }
