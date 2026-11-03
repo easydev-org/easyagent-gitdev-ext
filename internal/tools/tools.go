@@ -13,7 +13,6 @@ import (
 
 	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/extension"
-	"github.com/easydev-org/easybus-sdk/job"
 
 	"github.com/easydev-org/easyagent-gitdev-ext/internal/config"
 	"github.com/easydev-org/easyagent-gitdev-ext/internal/i18n"
@@ -36,18 +35,6 @@ type Deps struct {
 	ReportProgress func(ctx context.Context, tenant, callID string, p *easybus.ToolProgress) error
 
 	/**
-	 * Jobs is the shared background-job list.
-	 *
-	 * A WORKFLOW RUN OUTLIVES THE CALL THAT STARTED IT and the answer arrives minutes later, which
-	 * is exactly what the list is for. Before this, a caller had to poll `gh-run-jobs` itself —
-	 * the cancel tool's own text told it to.
-	 *
-	 * NIL MEANS NO BACKGROUNDING. The three CI tools then behave as they did: they return
-	 * immediately and say nothing when the run ends.
-	 */
-	Jobs *job.Registry
-
-	/**
 	 * NotifyJobDone wakes the conversation when a run ends.
 	 *
 	 * SAME TRIGGER SHAPE AS THE SANDBOX EXTENSION'S, and for the same reason: a finished run leaves
@@ -55,7 +42,7 @@ type Deps struct {
 	 * carried — a matrix build's log is megabytes, and it cannot be fetched until the run is over
 	 * anyway.
 	 */
-	NotifyJobDone func(ctx context.Context, tenant, session, jobID, title string, state job.State, exit *int) error
+	NotifyJobDone func(ctx context.Context, tenant, session, jobID, title string, state string, exit *int, reason string) error
 }
 
 // Handler is one tool implementation.

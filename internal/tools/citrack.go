@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/easydev-org/easyagent-gitdev-ext/internal/ghclient"
-	"github.com/easydev-org/easybus-sdk/job"
 )
 
 /**
@@ -28,9 +27,13 @@ const CIKind = "ci-run"
 const runPollEvery = 15 * time.Second
 
 /**
- * trackRun registers a workflow run and follows it to its end.
+ * trackRun follows a workflow run to its end and wakes the conversation when it finishes.
  *
  * IT RETURNS IMMEDIATELY. The run belongs to GitHub; the call that asked for it is over.
+ *
+ * NOTHING IS REGISTERED. This extension used to write the run into a shared job list with a heartbeat,
+ * which needed a sweeper to mark a stalled entry `lost` — and `lost` was a lie here, because a GitHub
+ * run keeps going after this process dies. The list is gone; `gh-run-list` asks GitHub.
  *
  * THE FOLLOW IS A POLL, AND IT HAS TO BE. A sandbox job can be waited on because the worker offers a
  * blocking JobWait over its own connection; GitHub offers a status read and nothing else, so the
@@ -38,35 +41,16 @@ const runPollEvery = 15 * time.Second
  * extension and the sandbox's, and it is caused by who owns the work.
  */
 func (t *toolset) trackRun(ctx context.Context, c *ghclient.Client, repo string, runID int64, title, session, tenant string) {
-	if t.deps.Jobs == nil {
-		// NO LIST, NO BACKGROUND JOB: the tool already returned its "started" reply, and a job
-		// nobody can look up is worse than one that was never registered.
-		return
-	}
-
 	id := CIKind + "." + strconv.FormatInt(runID, 10)
-	handle, err := t.deps.Jobs.Start(ctx, job.Entry{
-		ID:      id,
-		Kind:    CIKind,
-		Title:   title,
-		ExtID:   "gitdev",
-		Tenant:  tenant,
-		Session: session,
-		/**
-		 * REQUEST, NOT KILL. Cancelling a GitHub run sets a flag; the step in progress finishes
-		 * before the run stops, and GitHub may decline. A caller told `kill` would believe the
-		 * machine had stopped when what exists is a request in flight.
-		 */
-		CancelMode: job.CancelRequest,
-	})
-	if err != nil {
-		slog.WarnContext(ctx, "gitdev: cannot register run", "svc", "gitdev-ext", "run", runID, "err", err)
-		return
-	}
-
-	// THE HEARTBEAT OUTLIVES THE CALL, which ends as soon as this returns.
+	/**
+	 * THE FOLLOW OUTLIVES THE CALL, and it is the whole of what this function records.
+	 *
+	 * There is no entry in a shared list any more: the run belongs to GitHub, which is the only place
+	 * its status is true, and a copy of that status in a KV bucket could only ever be stale or wrong.
+	 * `gh-run-list` asks GitHub; this goroutine exists to wake the conversation when it ends.
+	 */
 	bg := context.WithoutCancel(ctx)
-	go handle.KeepAlive(bg)
+	slog.InfoContext(bg, "gitdev: following run", "svc", "gitdev-ext", "run", id, "session", session)
 
 	go func() {
 		defer func() {
@@ -94,11 +78,11 @@ func (t *toolset) trackRun(ctx context.Context, c *ghclient.Client, repo string,
 				continue
 			}
 			state, exit := runOutcome(run.Conclusion)
-			if err := handle.Finish(bg, state, exit, conclusionReason(run.Conclusion)); err != nil {
-				slog.WarnContext(bg, "gitdev: cannot record run end", "svc", "gitdev-ext", "run", runID, "err", err)
-			}
+			// THE CONCLUSION IS CARRIED IN THE WAKE. It is the only place GitHub's finer distinctions
+			// survive — `timed_out`, `action_required` and `skipped` are all `done` here.
 			if t.deps.NotifyJobDone != nil {
-				if err := t.deps.NotifyJobDone(bg, tenant, session, id, title, state, exit); err != nil {
+				if err := t.deps.NotifyJobDone(bg, tenant, session, id, title, state, exit,
+					conclusionReason(run.Conclusion)); err != nil {
 					slog.WarnContext(bg, "gitdev: cannot wake the conversation", "svc", "gitdev-ext", "run", runID, "err", err)
 				}
 			}
@@ -118,26 +102,26 @@ func (t *toolset) trackRun(ctx context.Context, c *ghclient.Client, repo string,
  * coreutils convention) — anything reading them already knows those numbers. `cancelled` and
  * `skipped` carry no code, because neither is a process that exited.
  */
-func runOutcome(conclusion string) (job.State, *int) {
+func runOutcome(conclusion string) (string, *int) {
 	code := func(n int) *int { return &n }
 	switch conclusion {
 	case "success":
-		return job.StateDone, code(0)
+		return "done", code(0)
 	case "failure":
-		return job.StateDone, code(1)
+		return "done", code(1)
 	case "timed_out":
-		return job.StateDone, code(124)
+		return "done", code(124)
 	case "cancelled":
-		return job.StateCancelled, nil
+		return "cancelled", nil
 	case "skipped":
-		return job.StateDone, code(0)
+		return "done", code(0)
 	case "action_required":
 		// NOT A FAILURE OF THE WORK: it is waiting on a human. Recorded as an ending because
 		// nothing here will change without somebody acting, and as `done` with no code because the
 		// jobs did not run.
-		return job.StateDone, nil
+		return "done", nil
 	default:
-		return job.StateDone, nil
+		return "done", nil
 	}
 }
 
