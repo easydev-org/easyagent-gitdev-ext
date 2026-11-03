@@ -6,8 +6,8 @@ import (
 	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/extension"
 
-	"github.com/easydev-org/easyagent-gitdev-ext/internal/forgeconfig"
 	"github.com/easydev-org/easyagent-gitdev-ext/internal/forge"
+	"github.com/easydev-org/easyagent-gitdev-ext/internal/forgeconfig"
 )
 
 // These two tools read a REMOTE repository over the forge's HTTP API, so they

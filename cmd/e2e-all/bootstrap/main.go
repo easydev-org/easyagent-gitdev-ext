@@ -26,10 +26,10 @@ import (
 
 func main() {
 	var (
-		base     = flag.String("url", envOr("E2E_FORGE_URL", "http://127.0.0.1:3000"), "forge base url")
-		user     = flag.String("user", envOr("E2E_FORGE_USER", "e2e"), "account to create")
-		password = flag.String("password", envOr("E2E_FORGE_PASSWORD", "e2e-password-1"), "its password")
-		email    = flag.String("email", envOr("E2E_FORGE_EMAIL", "e2e@example.invalid"), "its email")
+		base      = flag.String("url", envOr("E2E_FORGE_URL", "http://127.0.0.1:3000"), "forge base url")
+		user      = flag.String("user", envOr("E2E_FORGE_USER", "e2e"), "account to create")
+		password  = flag.String("password", envOr("E2E_FORGE_PASSWORD", "e2e-password-1"), "its password")
+		email     = flag.String("email", envOr("E2E_FORGE_EMAIL", "e2e@example.invalid"), "its email")
 		container = flag.String("container", envOr("E2E_FORGE_CONTAINER", "ci-forge"), "docker container to run the CLI in")
 		// The upstream this mirror copies, whose OWNER AND NAME the mirror takes. There is no separate
 		// `-repo`: a mirror is named after the thing it mirrors, and a flag that could disagree with
@@ -137,8 +137,6 @@ func createToken(ctx context.Context, base, user, password string) (string, erro
 	// Forgejo accepts it as `token <sha1>`; the suite uses it as-is.
 	return got.SHA1, nil
 }
-
-
 
 // ownerAndName reads owner and repository from a git URL — https, ssh, or the trailing path of either.
 //

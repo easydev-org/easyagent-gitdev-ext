@@ -14,7 +14,7 @@ import (
 // this one builds a client with NO repository, because the first question it answers is which
 // repository.
 type BrowseSource struct {
-	TokenFor func(tenant string) string
+	TokenFor   func(tenant string) string
 	TenantFrom func(ctx context.Context) (string, error)
 }
 

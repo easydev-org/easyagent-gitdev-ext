@@ -64,9 +64,9 @@ type FileView struct {
 
 // ChecksView is the CI status of a pull request.
 type ChecksView struct {
-	State  string     `json:"state"`
-	HeadSHA string    `json:"sha"`
-	Checks []CheckRow `json:"checks"`
+	State   string     `json:"state"`
+	HeadSHA string     `json:"sha"`
+	Checks  []CheckRow `json:"checks"`
 }
 
 // CheckRow is one named check.
@@ -74,4 +74,3 @@ type CheckRow struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 }
-
