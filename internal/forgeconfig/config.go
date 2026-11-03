@@ -21,7 +21,7 @@ import (
 
 // Knob names — the single source of truth for the manifest + readers.
 const (
-	KnobServers       = "servers"
+	KnobServers = "servers"
 	// KnobToken is the GITHUB credential — the UPSTREAM, not the mirror. It is a separate knob
 	// because a deployment writes to one host and reads from another, and the two have different
 	// credentials.

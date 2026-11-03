@@ -13,8 +13,8 @@ import (
 // A TEST RATHER THAN A COMMAND because it uses the same code the panel uses and nothing else: if
 // `Establish` cannot make a working mirror, this says so before anybody clicks a button and finds out.
 //
-// FORGE_LIVE_URL=… FORGE_LIVE_TOKEN=… GH_TOKEN=… \
-//   GH_E2E_REBUILD="easydev-org/a,easydev-org/b" go test ./internal/forge -run TestLiveRebuildMirrors
+//	FORGE_LIVE_URL=… FORGE_LIVE_TOKEN=… GH_TOKEN=… \
+//	  GH_E2E_REBUILD="easydev-org/a,easydev-org/b" go test ./internal/forge -run TestLiveRebuildMirrors
 func TestLiveRebuildMirrors(t *testing.T) {
 	base := os.Getenv("FORGE_LIVE_URL")
 	token := os.Getenv("FORGE_LIVE_TOKEN")

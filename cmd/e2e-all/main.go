@@ -17,10 +17,10 @@ package main
 
 import (
 	"context"
-	"strconv"
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,22 +30,22 @@ import (
 
 // The state a run accumulates, so later steps can use what earlier ones made.
 type state struct {
-	Repo    string // owner/name on GitHub
-	Mirror  string // owner/name in the forge
-	Branch  string
+	Repo   string // owner/name on GitHub
+	Mirror string // owner/name in the forge
+	Branch string
 	// File is a path the listing found, so the read step opens something that exists rather than a
 	// name this program assumed.
-	File    string
+	File string
 	// PatchFile is the file this run writes. Unique per run, so the suite passes on a repository that
 	// already has a previous run's file on main.
 	PatchFile string
-	Commit  string
-	PR      int
-	Issue   int
-	RunID   int64
-	JobID   int64
-	Tag     string
-	Release string
+	Commit    string
+	PR        int
+	Issue     int
+	RunID     int64
+	JobID     int64
+	Tag       string
+	Release   string
 	// Scratch is the throwaway repository the destructive tools work in, so they never touch the one
 	// the rest of the suite depends on.
 	Scratch        string
@@ -54,25 +54,25 @@ type state struct {
 
 func main() {
 	var (
-		natsURL  = flag.String("nats", envOr("NATS_URL", "nats://127.0.0.1:4222"), "NATS url")
-		tenant   = flag.String("tenant", envOr("E2E_TENANT", "alice"), "tenant")
-		session  = flag.String("session", envOr("E2E_SESSION", "e2e-all"), "session")
-		extID    = flag.String("ext", envOr("E2E_EXT", "gitdev"), "extension id")
-		repo     = flag.String("repo", os.Getenv("GH_E2E_REPO"), "GitHub owner/name to work in")
-		mirror   = flag.String("mirror", os.Getenv("GH_E2E_MIRROR"), "forge owner/name to work in")
+		natsURL = flag.String("nats", envOr("NATS_URL", "nats://127.0.0.1:4222"), "NATS url")
+		tenant  = flag.String("tenant", envOr("E2E_TENANT", "alice"), "tenant")
+		session = flag.String("session", envOr("E2E_SESSION", "e2e-all"), "session")
+		extID   = flag.String("ext", envOr("E2E_EXT", "gitdev"), "extension id")
+		repo    = flag.String("repo", os.Getenv("GH_E2E_REPO"), "GitHub owner/name to work in")
+		mirror  = flag.String("mirror", os.Getenv("GH_E2E_MIRROR"), "forge owner/name to work in")
 		// A repository that HAS workflows. The CI tools are read-only, so pointing them at one with a
 		// history is safe and is the difference between verifying them and skipping them.
-		ciRepo   = flag.String("ci-repo", envOr("GH_E2E_CI_REPO", os.Getenv("GH_E2E_REPO")), "repository with CI runs")
+		ciRepo = flag.String("ci-repo", envOr("GH_E2E_CI_REPO", os.Getenv("GH_E2E_REPO")), "repository with CI runs")
 		// The mirror's scheme and host. A remote is an ADDRESS: the extension picks which configured
 		// server a call belongs to by parsing its host, so owner/name alone cannot be routed.
-		forge    = flag.String("forge", envOr("GH_E2E_FORGE", "http://forgejo.dev.svc.cluster.local"), "mirror scheme+host")
-		keep     = flag.Bool("keep", false, "leave the created branch, tag and PR behind")
-		only     = flag.String("only", "", "run only the named step (for debugging)")
-		verbose  = flag.Bool("v", false, "print every reply")
+		forge   = flag.String("forge", envOr("GH_E2E_FORGE", "http://forgejo.dev.svc.cluster.local"), "mirror scheme+host")
+		keep    = flag.Bool("keep", false, "leave the created branch, tag and PR behind")
+		only    = flag.String("only", "", "run only the named step (for debugging)")
+		verbose = flag.Bool("v", false, "print every reply")
 		// -skip-github runs the MIRROR half only. A repository with no GitHub credential can still
 		// verify the six git-* tools against a forge, and reporting the rest as skipped is more honest
 		// than either failing or silently covering half of them.
-		skipGH   = flag.Bool("skip-github", false, "run only the mirror tools")
+		skipGH = flag.Bool("skip-github", false, "run only the mirror tools")
 	)
 	flag.Parse()
 

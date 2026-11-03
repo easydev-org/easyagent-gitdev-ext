@@ -43,13 +43,13 @@ type RunView struct {
 
 // JobView is one job of a run, with its steps.
 type JobView struct {
-	ID         int64       `json:"id"`
-	Name       string      `json:"name"`
-	Status     string      `json:"status"`
-	Conclusion string      `json:"conclusion"`
-	StartedAt  string      `json:"startedAt"`
-	URL        string      `json:"url"`
-	Steps      []StepView  `json:"steps"`
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	Status     string     `json:"status"`
+	Conclusion string     `json:"conclusion"`
+	StartedAt  string     `json:"startedAt"`
+	URL        string     `json:"url"`
+	Steps      []StepView `json:"steps"`
 	// LogAvailable says whether the log can be fetched at all: GitHub publishes a job's log only
 	// once the job is finished, so a running job has nothing to show and a button for it would fail.
 	LogAvailable bool `json:"logAvailable"`

@@ -22,7 +22,7 @@ import (
 func TestWholeLoopLive(t *testing.T) {
 	base := os.Getenv("FORGE_LIVE_URL")
 	tok := os.Getenv("FORGE_LIVE_TOKEN")
-	repo := os.Getenv("LOOP_REPO")       // e.g. agentdev/loop-test
+	repo := os.Getenv("LOOP_REPO") // e.g. agentdev/loop-test
 	upstream := os.Getenv("UPSTREAM_LIVE_URL")
 	upTok := os.Getenv("UPSTREAM_LIVE_TOKEN")
 	if base == "" || tok == "" || repo == "" || upstream == "" {

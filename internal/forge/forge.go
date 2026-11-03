@@ -92,7 +92,7 @@ func NewForHost(baseURL, token string) (*Client, error) {
 		return nil, fmt.Errorf("gitea client for %q: %w", baseURL, err)
 	}
 	return &Client{
-		c: c,
+		c:       c,
 		apiBase: strings.TrimRight(baseURL, "/") + "/api/v1", token: strings.TrimSpace(token),
 	}, nil
 }
