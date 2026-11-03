@@ -18,10 +18,10 @@ import (
 	"github.com/easydev-org/easybus-sdk/manifest"
 	"github.com/easydev-org/easybus-sdk/transport/nats"
 
-	"github.com/easydev-org/easyagent-gitdev-ext/internal/tools"
-	"github.com/easydev-org/easyagent-gitdev-ext/internal/uihandler"
 	"github.com/easydev-org/easyagent-gitdev-ext/internal/forge"
 	"github.com/easydev-org/easyagent-gitdev-ext/internal/forgeconfig"
+	"github.com/easydev-org/easyagent-gitdev-ext/internal/tools"
+	"github.com/easydev-org/easyagent-gitdev-ext/internal/uihandler"
 	// The PR source reads GitHub for the UI's pull-request pages — the one remote read in the UI's
 	// data path. Everything else the panel used to show came from a local checkout, which this
 	// extension no longer keeps.
@@ -87,10 +87,10 @@ func uiMux(ver, agentURL string, pulls uihandler.PullSource, issues uihandler.Is
 		Identity: &uihandler.IdentityResolver{AgentURL: agentURL},
 		// Pull requests are the one remote read the UI makes: a page shows the CURRENT state, where a
 		// card replays the snapshot a tool returned.
-		Pulls: pulls,
-		Issues: issues,
-		Runs: runs,
-		Browse: browse,
+		Pulls:    pulls,
+		Issues:   issues,
+		Runs:     runs,
+		Browse:   browse,
 		Mirrored: mirrored,
 		// The MIRROR's pages. Same shape as Pulls: a function resolved per request, because the
 		// token and the server list live in configuration and can change while this pod runs.
@@ -283,7 +283,7 @@ func main() {
 		// iframe embedding it is SAME-ORIGIN with the host. See extension.UISpec for why the prefix
 		// matters.
 		UI: &extension.UISpec{
-			Assets:      uiFiles,
+			Assets: uiFiles,
 			// THE BUNDLE IS ui/dist, not ui. fetch-ui.sh unrolls the release tarball into ui/dist and
 			// leaves its own README and script beside it; a StripPrefix of "ui" would look for
 			// ui/index.html, find nothing, and serve 404s for every asset with no clue why.

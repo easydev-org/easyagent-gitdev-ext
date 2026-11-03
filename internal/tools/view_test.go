@@ -24,7 +24,6 @@ func TestViewRouteShapes(t *testing.T) {
 	}
 }
 
-
 // A card names a RENDERER, not a route. There is nowhere to navigate to and nothing to fetch: the
 // host hands the frame the tool result, and the UI draws it. That is why a template carries no
 // workspace id — the card does not depend on one.

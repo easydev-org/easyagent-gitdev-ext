@@ -8,8 +8,8 @@ import (
 	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/extension"
 
-	"github.com/easydev-org/easyagent-gitdev-ext/internal/forgeconfig"
 	"github.com/easydev-org/easyagent-gitdev-ext/internal/forge"
+	"github.com/easydev-org/easyagent-gitdev-ext/internal/forgeconfig"
 )
 
 /**
@@ -300,7 +300,7 @@ func (t *toolset) syncUpstream(ctx context.Context, args map[string]any, session
 	}
 	if upstream == "" {
 		return extension.ToolResultData{}, &extension.TypedError{
-			Code: easybus.ToolResultErrorCodeInvalidArgument,
+			Code:    easybus.ToolResultErrorCodeInvalidArgument,
 			Message: "upstream is required (the git URL to follow, e.g. https://github.com/owner/repo.git)",
 		}
 	}
@@ -339,7 +339,7 @@ func (t *toolset) pushBranch(ctx context.Context, args map[string]any, session, 
 	to := strings.TrimSpace(argStr(args, "to"))
 	if branch == "" || upstream == "" {
 		return extension.ToolResultData{}, &extension.TypedError{
-			Code: easybus.ToolResultErrorCodeInvalidArgument,
+			Code:    easybus.ToolResultErrorCodeInvalidArgument,
 			Message: "branch and upstream are required",
 		}
 	}

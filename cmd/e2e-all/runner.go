@@ -24,10 +24,10 @@ type runner struct {
 	// ciRepo is where the CI tools are exercised. It defaults to repo, but a repository with no
 	// workflow would leave three tools unverified — and 'skipped because there was nothing to look
 	// at' is exactly the shape of coverage that quietly disappears.
-	ciRepo  string
-	mirror  string
+	ciRepo string
+	mirror string
 	// forgeBase is the scheme+host of the mirror, so a remote can be built as an address.
-	forgeBase string
+	forgeBase  string
 	only       string
 	verbose    bool
 	skipGitHub bool
@@ -44,7 +44,7 @@ type runner struct {
 	// first discovered, and re-listing to find it again would be a second call for one fact.
 	artifactID int64
 
-	steps  []struct {
+	steps []struct {
 		name string
 		fn   func(*state) error
 	}

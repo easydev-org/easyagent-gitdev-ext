@@ -15,8 +15,8 @@ import (
 // repository that plainly existed. The assertion is on the OWNER, because getting the repository made
 // is not the thing that was wrong.
 //
-// FORGE_LIVE_URL=http://forge:3000 FORGE_LIVE_TOKEN=… GH_TOKEN=… GH_E2E_REPO=owner/name \
-//   go test ./internal/forge -run TestLiveEstablishKeepsUpstreamOwner
+//	FORGE_LIVE_URL=http://forge:3000 FORGE_LIVE_TOKEN=… GH_TOKEN=… GH_E2E_REPO=owner/name \
+//	  go test ./internal/forge -run TestLiveEstablishKeepsUpstreamOwner
 func TestLiveEstablishKeepsUpstreamOwner(t *testing.T) {
 	base := os.Getenv("FORGE_LIVE_URL")
 	token := os.Getenv("FORGE_LIVE_TOKEN")
