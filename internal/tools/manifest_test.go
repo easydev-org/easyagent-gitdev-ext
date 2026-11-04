@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/easydev-org/easybus-sdk/manifest"
+
+	"github.com/easydev-org/easyagent-gitdev-ext/internal/watch"
 )
 
 // The manifest is embedded from cmd/gitdev-ext/manifest.yaml, and the repository root carries a
@@ -110,4 +112,30 @@ func TestRequiredPermissionsAreDeclared(t *testing.T) {
 			}
 		}
 	}
+}
+
+// THE DECLARED CHANNEL MUST BE THE ONE THE CODE PUBLISHES ON.
+//
+// A subscription stores the channel as a literal string and the router compares it with `==`, so a
+// declaration that disagrees with the publisher produces a subscription that matches NOTHING — no
+// error at subscribe time, no error at publish time, and the session simply never hears the event.
+//
+// It happened: the manifest said `github` while release.go published on `gitdev`.
+func TestDeclaredChannelMatchesPublishedChannel(t *testing.T) {
+	m := loadManifest(t)
+	if len(m.Channels) == 0 {
+		t.Fatal("manifest declares no channels")
+	}
+	for _, c := range m.Channels {
+		if c.Name == watch.ChannelName {
+			return
+		}
+	}
+	var got []string
+	for _, c := range m.Channels {
+		got = append(got, c.Name)
+	}
+	t.Fatalf("release watching publishes on %q, but the manifest declares %v; "+
+		"a subscriber following the declared name would never receive an event",
+		watch.ChannelName, got)
 }
