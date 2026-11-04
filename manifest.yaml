@@ -100,12 +100,12 @@ config:
   - name: watch-repos
     type: string
     description: >-
-      Comma-separated owner/name repositories whose RELEASES are published on the `github`
+      Comma-separated owner/name repositories whose RELEASES are published on the `gitdev`
       channel. Opt-in per repository: polling everything a token can see would exhaust the rate
       limit and mostly watch repositories nobody here cares about.
     descriptions:
       zh: >-
-        逗号分隔的 owner/name 仓库清单，其 RELEASE 会发布到 `github` 频道。
+        逗号分隔的 owner/name 仓库清单，其 RELEASE 会发布到 `gitdev` 频道。
         按仓库逐个开启：轮询 token 能看到的所有仓库会耗尽配额，而且大多与本处无关。
     required: false
 
@@ -937,14 +937,18 @@ tools:
 # Events this extension publishes, so a session can follow a repository and be woken when
 # something ships.
 #
-# The channel is `github`, not `gitea`: the two extensions report different forges, and a
-# subscriber following GitHub releases should not also receive tags from a self-hosted Gitea.
+# THE CHANNEL IS NAMED AFTER THE EXTENSION, NOT AFTER A FORGE. It was `github` while this covered
+# GitHub only and a separate extension reported the mirror; those are one extension now, so one
+# channel carries both. The name matters more than it looks: a subscription stores the channel as a
+# literal string, so a declaration that disagrees with what the code publishes produces a
+# subscription that matches nothing — with no error on either side. That is why
+# TestDeclaredChannelMatchesPublishedChannel asserts the two agree.
 #
 # WHY `release.` and not `tag.`: a TAG is a pointer a build might consume; a RELEASE is an
 # announcement a human made. "Notice the new version" almost always means the release, and a tag
 # pushed without one is not yet news.
 channels:
-  - name: github
+  - name: gitdev
     description: Repository events from GitHub.
     descriptions:
       zh: 来自 GitHub 的仓库事件。
