@@ -18,7 +18,8 @@ git-push-branch      send that branch          (and nothing else)
         ↓
 gh-pr-create         open the request
 gh-pr-checks         CI and mergeability
-gh-pr-merge          land it
+gh-pr-close          abandon YOUR OWN request
+gh-pr-manage         close or land someone else's
         ↓
 git-sync-upstream    next task starts from the merged state
 ```

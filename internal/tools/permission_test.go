@@ -32,19 +32,56 @@ func TestExpressingNeedsNoPermission(t *testing.T) {
 
 // Everything that CHANGES something needs repo.maintainer — including closing an issue, which a
 // contributor may not do even to its own.
-func TestChangingNeedsMaintainer(t *testing.T) {
+/**
+ * THE GRANT FOLLOWS WHOSE WORK THE TOOL TOUCHES, not how much it changes.
+ *
+ * Acting on your own pull request — opening it, closing it — needs only `repo.write`. Acting on someone
+ * else's needs `repo.maintainer`, because closing their proposal or merging into a branch they build on
+ * reaches a person who did not ask for it.
+ *
+ * THE PAIR THAT MAKES THIS TEST WORTH WRITING is gh-pr-close vs gh-pr-manage: the same underlying
+ * operation at two levels. If a later change collapsed them back into one tool, this is where the loss of
+ * distinction would surface.
+ */
+func TestOwnWorkNeedsWriteAndOthersNeedMaintainer(t *testing.T) {
 	m := RequireMap()
-	for _, tool := range []string{
-		"gh-issue-close",
-		"gh-pr-create", "gh-pr-merge",
+	needsWrite := []string{"gh-issue-close", "gh-pr-create", "gh-pr-close"}
+	needsMaintainer := []string{
+		"gh-pr-manage",
 		"gh-run-dispatch", "gh-run-rerun", "gh-run-cancel",
 		"gh-tag-create", "gh-tag-delete",
 		"gh-repo-rename", "gh-repo-delete",
-	} {
-		got := m[tool]
-		if len(got) != 1 || got[0] != PermMaintainer {
+	}
+	for _, tool := range needsWrite {
+		if got := m[tool]; len(got) != 1 || got[0] != PermWrite {
+			t.Errorf("%s requires %v, want [%s]: it acts only on the caller's own work",
+				tool, got, PermWrite)
+		}
+	}
+	for _, tool := range needsMaintainer {
+		if got := m[tool]; len(got) != 1 || got[0] != PermMaintainer {
 			t.Errorf("%s requires %v, want [%s]", tool, got, PermMaintainer)
 		}
+	}
+
+	// AND NOTHING ASKS FOR BOTH. A tool requiring write and maintainer would mean the write grant is
+	// never sufficient, which is the distinction this split exists to make real.
+	for tool, keys := range m {
+		if len(keys) > 1 {
+			t.Errorf("%s requires %v; a tool should need one grant, not a combination", tool, keys)
+		}
+	}
+}
+
+// Closing a pull request you opened and closing someone else's are different tools, and the weaker one
+// must not be usable to reach the stronger action.
+func TestPRCloseIsNotPRManage(t *testing.T) {
+	m := RequireMap()
+	if m["gh-pr-close"] == nil || m["gh-pr-manage"] == nil {
+		t.Fatal("both pull-request close paths must be declared")
+	}
+	if m["gh-pr-close"][0] == m["gh-pr-manage"][0] {
+		t.Error("gh-pr-close and gh-pr-manage share a grant; the split would be cosmetic")
 	}
 }
 

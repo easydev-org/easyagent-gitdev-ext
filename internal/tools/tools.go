@@ -50,21 +50,27 @@ type Handler func(ctx context.Context, args map[string]any, session, tenant stri
 
 // Permission keys this extension declares.
 //
-// TWO KEYS. Reading, opening an issue and commenting need none of them; those do not change
-// anything, and gating a comment would only stop a session from asking a question.
+// Reading, opening an issue and commenting need none of them; those do not change anything, and
+// gating a comment would only stop a session from asking a question.
 //
-//	repo.maintainer  every operation that CHANGES something: close an issue, open or merge a pull
-//	                 request, run CI, tag a release, rename or delete the repository
+//	repo.write       act on YOUR OWN work: open a pull request, close your own, close an issue,
+//	                 comment. Nothing anyone else depends on changes.
+//	repo.maintainer  act on OTHER people's work or on shared state: close or merge someone else's
+//	                 pull request, run CI, tag a release, rename or delete the repository.
 //	org.admin        create a repository — organization level, because the repository does not
-//	                 exist yet and there is nothing to scope a grant to
+//	                 exist yet and there is nothing to scope a grant to.
 //
-// There is deliberately no "developer" level. It existed to separate proposing from deciding, and
-// every operation had to be argued into one side: is opening a pull request proposing? is running
-// CI? is closing an issue? The answers were never convincing, and the ownership rule that came
-// with it was always true in this deployment (one token, many sessions), so it protected nothing
-// while looking as though it did.
+// THE LINE IS WHOSE, NOT WHAT. A previous version of this file argued there should be no
+// "developer" level at all, on the grounds that every operation had to be argued into one side.
+// That argument was wrong for one specific case, and the case is the whole point: closing YOUR OWN
+// pull request and closing SOMEONE ELSE'S are the same verb but not the same act. The first
+// abandons your own proposal; the second discards work a person is relying on. Separating them lets
+// a session tidy up after itself without a maintainer grant, and without asking for confirmation on
+// every such tidy-up.
 const (
-	// PermMaintainer may change the repository and everything in it.
+	// PermWrite acts on the caller's own work in a repository.
+	PermWrite = "repo.write"
+	// PermMaintainer may change the repository and everything in it, including other people's work.
 	PermMaintainer = "repo.maintainer"
 	// PermOrgAdmin creates repositories.
 	PermOrgAdmin = "org.admin"
@@ -78,10 +84,13 @@ const (
 // not merge should still be able to LOOK at the pull request, and gating reads would make every
 // grant also a grant of visibility.
 var requireMap = map[string][]string{
-	// Everything that CHANGES something.
-	"gh-issue-close":  {PermMaintainer},
-	"gh-pr-create":    {PermMaintainer},
-	"gh-pr-merge":     {PermMaintainer},
+	// Acting on your own work.
+	"gh-issue-close": {PermWrite},
+	"gh-pr-create":   {PermWrite},
+	"gh-pr-close":    {PermWrite},
+
+	// Acting on other people's work, or on shared state.
+	"gh-pr-manage":    {PermMaintainer},
 	"gh-run-dispatch": {PermMaintainer},
 	"gh-run-rerun":    {PermMaintainer},
 	"gh-run-cancel":   {PermMaintainer},
@@ -151,7 +160,8 @@ func Registry(d Deps) map[string]Handler {
 		// request as a kind of issue sharing one numbering space. See items.go.
 		"gh-pr-create": t.prCreate,
 		"gh-pr-checks": t.prChecks,
-		"gh-pr-merge":  t.prMerge,
+		"gh-pr-close":  t.prClose,
+		"gh-pr-manage": t.prManage,
 
 		// What a pull request CHANGED. Without these, reviewing a PR means reading its title.
 		"gh-pr-files": t.prFiles,

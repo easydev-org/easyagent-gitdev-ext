@@ -281,16 +281,18 @@ func (r *runner) stepPRChecks(st *state) error {
 }
 
 func (r *runner) stepPRMerge(st *state) error {
-	_, err := r.must("gh-pr-merge", "gh-pr-merge", map[string]any{
-		"repo": r.repo, "issue_id": st.PR, "method": "squash",
+	// MERGING SOMEONE ELSE'S PULL REQUEST IS `gh-pr-manage`, not a tool of its own: closing and merging
+	// share a blast radius and an audience, so they share a tool and a confirmation.
+	_, err := r.must("gh-pr-manage", "gh-pr-manage", map[string]any{
+		"repo": r.repo, "pull_number": st.PR, "action": "merge", "merge_method": "squash",
 	})
 	if err != nil {
 		// A repository whose branch protection refuses the merge is a REAL answer, not a failure of
 		// this extension — but it is reported as a skip with the reason, never silently.
-		r.skip("gh-pr-merge", "the repository refused the merge: "+truncate(err.Error(), 120))
+		r.skip("gh-pr-manage", "the repository refused the merge: "+truncate(err.Error(), 120))
 		return nil
 	}
-	r.ok("gh-pr-merge")
+	r.ok("gh-pr-manage")
 	return nil
 }
 
