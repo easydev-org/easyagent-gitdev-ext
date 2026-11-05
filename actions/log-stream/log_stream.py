@@ -250,12 +250,73 @@ def main():
     #
     # errors='replace' turns the offending byte into a replacement character and keeps
     # going. Losing one glyph in a progress log is nothing next to losing the run.
+    # ITS OWN PROCESS GROUP, SO A CANCEL REACHES WHAT THE COMMAND STARTED.
+    #
+    # The command is `bash -c "<the step's script>"`, and that script starts the real work -
+    # python3, qemu, ffmpeg. Killing only the direct child leaves the grandchildren running:
+    # bash dies, the Python it forked does not, and the step's log stops while the machine
+    # keeps booting. That is what a cancelled macOS job did - the cancel was accepted twice,
+    # the run stayed in_progress, and the guest went on waiting out a 1800-second timeout.
+    #
+    # start_new_session=True puts the child in a new session and process group, which makes
+    # os.killpg able to reach every descendant in one call. Without it there is no handle on
+    # anything below the first level: the child's children are in the SAME group as this
+    # process, and killing that group would kill the streamer too.
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1, errors='replace')
+                            text=True, bufsize=1, errors='replace',
+                            start_new_session=True)
 
-    def on_term(signum, frame):
-        proc.terminate()
-    signal.signal(signal.SIGTERM, on_term)
+    # SIGNALS ARRIVING DURING THE RUN, AND SIGNALS ARRIVING AT ALL.
+    #
+    # THREE SEPARATE THINGS WERE WRONG, and each one alone was enough to make a cancel
+    # look like it did nothing:
+    #
+    #   SIGTERM reached this process and called proc.terminate() - one PID. See above.
+    #
+    #   SIGINT is what a cancel sometimes arrives as, and nothing handled it, so Python
+    #   turned it into KeyboardInterrupt inside the `for line in proc.stdout` loop - which
+    #   leaves the loop (and the child) to the finally-less exit path.
+    #
+    #   SIGHUP comes when the runner tears the step down, and the default is to die without
+    #   touching the child at all - the grandchild is orphaned onto PID 1 and runs to its
+    #   own timeout.
+    #
+    # All three now do the same thing: kill the child's whole process group, then this
+    # process. SIGKILL follows SIGTERM because a qemu that is mid-write ignores polite
+    # requests, and a cancelled step must not wait for one.
+    def _kill_tree(signum, frame):
+        print(f"log-stream: signal {signum}, stopping the command's process group",
+              file=sys.stderr, flush=True)
+        # `proc.pid` IS THE GROUP ID. start_new_session=True makes the child a session and
+        # group leader, so its pid and its pgid are the same number - asking the kernel for
+        # getpgid() can return the group after a race where the child has already exited,
+        # and the answer is known here without asking.
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        # GIVE IT FIVE SECONDS, THEN STOP ASKING.
+        #
+        # qemu and ffmpeg handle SIGTERM; a shell loop that ignores it does not. Five
+        # seconds is long enough for the first and short enough that the second cannot
+        # hold the step open - which is the whole complaint this function exists to fix.
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                break
+            time.sleep(0.1)
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        # THE STREAMER EXITS, WHICH IS WHAT LETS THE STEP FINISH. Exiting through the
+        # normal path instead would run cr.finish("failure") and report a cancel as a
+        # build failure.
+        os._exit(143)
+
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, _kill_tree)
 
     for line in proc.stdout:
         sys.stdout.write(line)
