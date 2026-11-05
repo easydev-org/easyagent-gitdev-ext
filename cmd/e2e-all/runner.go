@@ -89,6 +89,11 @@ func (r *runner) call(tool string, args map[string]any) (result, error) {
 	// deletes THAT one — a grant naming only the repository under test would refuse those, and the
 	// refusal would look like a broken tool rather than an under-scoped test.
 	grants := []*bus.Grant{
+		// BOTH WRITE LEVELS. The suite calls every tool, and the ones that act on your OWN work now
+		// require `repo.write` rather than a maintainer grant — a distinction added because closing your
+		// own pull request is not the same act as closing someone else's. A missing entry here would
+		// look like a broken tool.
+		{Key: "repo.write", Params: bus.Struct(map[string]any{"repo": r.owner() + "/*"})},
 		{Key: "repo.maintainer", Params: bus.Struct(map[string]any{"repo": r.owner() + "/*"})},
 		{Key: "github.repo", Params: bus.Struct(map[string]any{"repo": r.owner() + "/*"})},
 		{Key: "org.admin", Params: bus.Struct(map[string]any{"org": r.owner()})},
