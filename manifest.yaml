@@ -177,6 +177,8 @@ permissions:
 tools:
   # ── 本地 git（工作区目录，不联网）─────────────────────────────────────────
   - name: git-branch-create
+    # creates a local branch; nothing remote changes
+    effect: low
     description: >-
       Make a working branch, from a local branch or from one that exists only on
       the upstream. A name that ALREADY EXISTS is refused by default: silently
@@ -230,6 +232,8 @@ tools:
       required: [remote, branch]
     required_config: [servers]
   - name: git-file-list
+    # reads the workspace
+    effect: none
     description: >-
       List one directory of one branch. An empty dir means the repository root.
     descriptions:
@@ -255,6 +259,8 @@ tools:
       required: [remote, branch]
     required_config: [servers]
   - name: git-file-patch
+    # rewrites files in the workspace; the commit is local
+    effect: low
     description: >-
       Edit files with a patch. THE ONLY EDITING TOOL — there is no write, delete
       or move. Applied whole or not at all, and the whole patch becomes ONE
@@ -289,6 +295,8 @@ tools:
       required: [remote, branch, message, patch]
     required_config: [servers]
   - name: git-file-read
+    # reads the workspace
+    effect: none
     description: >-
       Read one file from one branch, with line numbers. Read before patching: the
       hunk header needs the current content.
@@ -316,6 +324,8 @@ tools:
       required: [remote, branch, path]
     required_config: [servers]
   - name: git-push-branch
+    # publishes a NEW branch; no shared branch is touched
+    effect: low
     description: >-
       Send ONE branch to the upstream, under a name of your choosing. Nothing else
       leaves the mirror — unlike a push mirror, which sends every ref the moment it
@@ -353,6 +363,8 @@ tools:
       required: [remote, branch, upstream]
     required_config: [servers]
   - name: git-branch-delete
+    # deletes a branch that may hold the only copy of its commits
+    effect: high
     description: >-
       Delete ONE branch from the upstream. This is the way back out: a branch pushed
       for review is a branch somebody must be able to remove when the change is
@@ -392,6 +404,8 @@ tools:
       required: [remote, branch, upstream, confirm]
     required_config: [servers]
   - name: git-sync-upstream
+    # fast-forwards the workspace onto what others pushed
+    effect: medium
     description: >-
       Fast-forward a branch to its same-named branch on the upstream. FOR
       PROTECTED BRANCHES: call it before cutting a working branch, so the new
@@ -425,6 +439,8 @@ tools:
       required: [remote, branch, upstream]
     required_config: [servers]
   - name: gh-issue-create
+    # opens a new issue
+    effect: low
     description: >-
       Open an ISSUE. (A pull request cannot be created here: it starts from a workspace, via
       gh-pr-create.)
@@ -440,6 +456,8 @@ tools:
       required: [repo, title]
 
   - name: gh-issue-list
+    # reads issues
+    effect: none
     description: >-
       Issues AND pull requests, one number space. `kind` filters to just one: all (default),
       issue, or pr.
@@ -457,6 +475,8 @@ tools:
       required: [repo]
 
   - name: gh-issue-show
+    # reads an issue
+    effect: none
     description: >-
       One issue OR pull request, identified by issue_id. Reports which it is, plus branch and
       mergeability when it is a pull request — so a caller need not know in advance.
@@ -472,6 +492,8 @@ tools:
       required: [repo, issue_id]
 
   - name: gh-issue-comment
+    # adds a comment; nothing existing is replaced
+    effect: low
     description: >-
       Comment on an issue or pull request. With `path` and `line` it attaches to that line of the
       diff — pull requests only; on an issue that is refused rather than downgraded.
@@ -491,6 +513,8 @@ tools:
       required: [repo, issue_id, body]
 
   - name: gh-issue-comments
+    # reads comments
+    effect: none
     description: >-
       Everything said on an issue or pull request: the conversation AND the line comments,
       labelled separately.
@@ -648,6 +672,8 @@ tools:
     effect: none
 
   - name: gh-info
+    # reads repository metadata
+    effect: none
     description: Repository metadata. No token needed on a public repository.
     descriptions:
       zh: 仓库元信息。公开仓库无需令牌。
@@ -658,18 +684,24 @@ tools:
       required: [repo]
 
   - name: gh-whoami
+    # reads the token identity
+    effect: none
     description: The token's identity, scopes and remaining budget.
     descriptions:
       zh: 令牌身份、权限范围与剩余配额。
     input_schema: {type: object, properties: {}}
 
   - name: gh-orgs
+    # reads organizations
+    effect: none
     description: Organizations the caller belongs to.
     descriptions:
       zh: 所属组织。
     input_schema: {type: object, properties: {}}
 
   - name: gh-repos
+    # reads repositories
+    effect: none
     description: Repositories the caller can see.
     descriptions:
       zh: 可见仓库。
@@ -681,6 +713,8 @@ tools:
         visibility: {type: string, descriptions: {zh: all | public | private}}
 
   - name: gh-releases
+    # reads releases
+    effect: none
     description: Releases for a repository; with `tag`, that one release.
     descriptions:
       zh: 仓库的 release 列表；传 `tag` 返回该条详情。
@@ -693,6 +727,8 @@ tools:
       required: [repo]
 
   - name: gh-packages
+    # reads packages
+    effect: none
     description: An organization's packages, or one package's versions.
     descriptions:
       zh: 组织的软件包，或某个包的版本列表。
@@ -705,6 +741,8 @@ tools:
       required: [org]
 
   - name: gh-tag-create
+    # publishes a tag others may already reference
+    effect: medium
     description: >-
       Create an ANNOTATED tag. `message` is required. MAINTAINER ONLY: a tag announces a version,
       and it is paired with gh-tag-delete so that whoever publishes can also withdraw.
@@ -723,6 +761,8 @@ tools:
     requires: [repo.maintainer]
 
   - name: gh-tag-list
+    # reads tags
+    effect: none
     description: Tags with the commit each points at.
     descriptions:
       zh: 标签列表，含各自指向的提交。
@@ -733,6 +773,8 @@ tools:
       required: [repo]
 
   - name: gh-tag-show
+    # reads a tag
+    effect: none
     description: One tag's annotation — message, tagger, date.
     descriptions:
       zh: 单个标签的附注——说明、打标签的人、时间。
@@ -744,6 +786,8 @@ tools:
       required: [repo, tag]
 
   - name: gh-tag-delete
+    # deletes a tag others may be pinned to
+    effect: high
     description: >-
       Delete a tag AND its release, unconditionally. IRREVERSIBLE.
     descriptions:
@@ -757,6 +801,8 @@ tools:
     requires: [repo.maintainer]
 
   - name: gh-repo-create
+    # creates a new repository
+    effect: low
     description: >-
       Create a repository, under `org` or the authenticated user. Needs org.admin — creating a
       repository is an ORGANIZATION decision, and there is no repository yet to scope a grant to.
@@ -776,6 +822,8 @@ tools:
     requires: [org.admin]
 
   - name: gh-repo-rename
+    # breaks every existing clone and link to the old name
+    effect: high
     description: Rename a repository. Breaks every existing clone, CI ref and doc link.
     descriptions:
       zh: 重命名仓库。会让所有既有 clone、CI 引用与文档链接失效。
@@ -788,6 +836,8 @@ tools:
     requires: [repo.maintainer]
 
   - name: gh-repo-delete
+    # destroys the repository and everything in it
+    effect: high
     description: Delete a repository. IRREVERSIBLE. `confirm` must equal the slug.
     descriptions:
       zh: 删除仓库。不可撤销。`confirm` 必须等于仓库全名。
@@ -801,6 +851,8 @@ tools:
 
   # ── CI：观察 ───────────────────────────────────────────────────────────
   - name: gh-workflow-list
+    # reads workflows
+    effect: none
     description: The repository's Actions workflows.
     descriptions:
       zh: 仓库的 Actions 工作流列表。
@@ -811,6 +863,8 @@ tools:
       required: [repo]
 
   - name: gh-run-list
+    # reads runs
+    effect: none
     description: Workflow runs, newest first.
     descriptions:
       zh: 工作流运行列表，最新的在前。
@@ -824,6 +878,8 @@ tools:
       required: [repo]
 
   - name: gh-run-jobs
+    # reads jobs
+    effect: none
     description: >-
       Jobs and PER-STEP status of a run — the LIVE view. A job's log exists only after it finishes.
     descriptions:
@@ -836,6 +892,8 @@ tools:
       required: [repo, run]
 
   - name: gh-run-log
+    # reads a log
+    effect: none
     description: A run's logs, one section per job. Only after the jobs finish.
     descriptions:
       zh: 某次运行的日志，按 job 分段。仅在 job 结束后可用。
@@ -848,6 +906,8 @@ tools:
       required: [repo, run]
 
   - name: gh-job-log
+    # reads a log
+    effect: none
     description: >-
       The COMPLETE log of a FINISHED job — the runner's real log, with timestamps, ##[group]
       framing and every line the build produced. Only works after the job finishes; GitHub has no
@@ -900,6 +960,8 @@ tools:
       required: [repo, job]
 
   - name: gh-check-log
+    # reads a log
+    effect: none
     description: >-
       The LIVE view of a running job — but ONLY if the repository publishes it. This reads a check
       run's output.text, a field the workflow fills itself; nothing else can fill it, and GitHub
@@ -936,6 +998,8 @@ tools:
       required: [repo]
 
   - name: gh-artifacts
+    # lists artifacts
+    effect: none
     description: The artifacts a run uploaded, flagging expired ones.
     descriptions:
       zh: 某次运行上传的产物，标出已过期的。
@@ -947,6 +1011,8 @@ tools:
       required: [repo, run]
 
   - name: gh-artifact-download
+    # downloads bytes; no remote state changes
+    effect: none
     description: >-
       Download one artifact into the tenant's OBJECT STORAGE and return the object name. Refuses
       anything over max_bytes rather than truncating.
@@ -963,6 +1029,8 @@ tools:
       required: [repo, artifact]
 
   - name: gh-run-rerun
+    # restarts a run others may be waiting on
+    effect: medium
     description: >-
       Rerun, defaulting to failed-only. A developer may rerun only its own runs; a maintainer may
       rerun anyone's.
@@ -979,6 +1047,8 @@ tools:
     requires: [repo.maintainer]
 
   - name: gh-run-cancel
+    # kills a run others may be waiting on
+    effect: medium
     description: >-
       Cancel a run. A REQUEST, not an instant stop. A developer may cancel only its own runs.
     descriptions:
@@ -992,6 +1062,8 @@ tools:
     requires: [repo.maintainer]
 
   - name: gh-run-dispatch
+    # starts a run that consumes shared quota and may deploy
+    effect: medium
     description: >-
       Trigger a workflow_dispatch. Returns the run id it created.
     descriptions:
