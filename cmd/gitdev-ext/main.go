@@ -222,11 +222,25 @@ func main() {
 		},
 	})
 
+	/**
+	 * EFFECT COMES FROM THE MANIFEST, not from a second table here.
+	 *
+	 * The manifest is what a user reads and what the agent validates; restating it in Go would give the
+	 * same tool two declarations that can disagree, and the one that drifts would be whichever is harder
+	 * to see. `RequireMap` exists because the SDK needs the grant keys at wiring time, but the effect has
+	 * no such constraint — it is pure metadata.
+	 */
+	effects := make(map[string]string, len(m.Tools))
+	for _, t := range m.Tools {
+		effects[t.Name] = t.Effect
+	}
+
 	specs := make(map[string]extension.ToolSpec, len(handlers))
 	requires := tools.RequireMap()
 	for name, h := range handlers {
 		h := h
 		specs[name] = extension.ToolSpec{
+			Effect: effects[name],
 			// Attach the permission keys HERE rather than in each handler: the SDK needs them
 			// before it calls the handler, and a handler that forgot to declare its own
 			// requirement would simply never be gated.
