@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/extension"
 
 	"github.com/easydev-org/easyagent-gitdev-ext/internal/ghclient"
@@ -22,9 +23,9 @@ import (
 // which kind of object it is holding. These tools report the kind, and add the pull-request-only
 // facts (head/base, mergeability) when there are any.
 //
-// The pull-request-only ACTIONS keep their own names — gh-pr-create, gh-pr-merge — because they do
-// something an issue cannot: merge has no issue equivalent, and creating a pull request starts
-// from a workspace rather than from a title.
+// The pull-request-only ACTIONS keep their own names — gh-pr-create, gh-pr-close, gh-pr-manage —
+// because they do something an issue cannot: creating a pull request starts from a workspace rather
+// than from a title, and closing one is a different act from closing an issue (see issueClose).
 
 // issueRef resolves an issue or pull request by number and says which it is.
 func (t *toolset) issueRef(ctx context.Context, c *ghclient.Client, number int) (ghclient.Issue, bool, error) {
@@ -270,10 +271,18 @@ func (t *toolset) issueComments(ctx context.Context, args map[string]any, sessio
 	}, nil
 }
 
-// issueClose closes an issue OR a pull request.
-//
-// The result SAYS which, and for a pull request adds that closing does not delete the branch: the
-// two actions share an endpoint but not a consequence, and a caller should not have to guess.
+/**
+ * issueClose closes an ISSUE. It refuses a pull request.
+ *
+ * THE TWO USED TO SHARE THIS ENDPOINT, and the tool reported which one it had closed. That was convenient
+ * and wrong: a pull request is a proposal, and abandoning one is a different act with a different
+ * audience and a different effect on other people. Routing it through an "issue" tool meant the caller
+ * never declared which of the two it believed it was doing, and the effect could not be declared honestly
+ * either — an issue close is `low`, a pull-request close by someone else is `medium`.
+ *
+ * The refusal names where to go instead, because "that is a pull request" alone leaves the caller to
+ * guess whether the tool is wrong or the request is.
+ */
 func (t *toolset) issueClose(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
 	Progress(ctx).Phase("closing")
 	c, repo, err := t.clientFor(tenant, args)
@@ -288,16 +297,17 @@ func (t *toolset) issueClose(ctx context.Context, args map[string]any, session, 
 	if ierr != nil {
 		return extension.ToolResultData{}, errFailed("%s#%d: %v", repo, n, ierr)
 	}
+	if isPR {
+		return extension.ToolResultData{}, &extension.TypedError{
+			Code: easybus.ToolResultErrorCodeInvalidArgument,
+			Message: fmt.Sprintf(
+				"%s#%d is a PULL REQUEST, not an issue. Use gh-pr-close for your own, or gh-pr-manage "+
+					"for anyone's — they differ in what they affect and in what they ask of you.",
+				repo, n),
+		}
+	}
 	if cerr := c.CloseIssue(ctx, n); cerr != nil {
 		return extension.ToolResultData{}, errFailed("%s#%d: %v", repo, n, cerr)
-	}
-	if isPR {
-		return extension.ToolResultData{
-			Content: fmt.Sprintf("closed pull request #%d WITHOUT merging\n\nThis abandons the proposal; "+
-				"the branch and its commits still exist. Merge instead with gh-pr-merge if the change "+
-				"was meant to land.", n),
-			Data: map[string]any{"issue": n, "closed": "pull_request", "merged": false},
-		}, nil
 	}
 	return extension.ToolResultData{
 		Content: fmt.Sprintf("closed issue #%d", n),

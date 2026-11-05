@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/extension"
 
 	"github.com/easydev-org/easyagent-gitdev-ext/internal/ghclient"
@@ -31,7 +32,7 @@ func (t *toolset) prChecks(ctx context.Context, args map[string]any, session, te
 	fmt.Fprintf(&b, "CI: %s\n", state)
 
 	// MERGEABILITY travels with CI because they answer the same question — "can this land?" — and a
-	// caller that learns about a conflict only when `gh-pr-merge` fails has already spent the review.
+	// caller that learns about a conflict only when `gh-pr-manage` fails has already spent the review.
 	//
 	// A failure to READ it is not a failure of the tool: CI status is still useful, and the merge
 	// state is reported as unknown rather than dragging the whole result down.
@@ -76,7 +77,78 @@ func (t *toolset) prChecks(ctx context.Context, args map[string]any, session, te
 	}, nil
 }
 
-func (t *toolset) prMerge(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+/**
+ * prClose closes a pull request the caller OPENED.
+ *
+ * IT REFUSES SOMEONE ELSE'S. Closing your own abandons your own proposal; closing another person's
+ * discards work they are relying on. Those are the same verb and different acts, so they are different
+ * tools with different effects — and the refusal is what makes the split real rather than advisory.
+ *
+ * THE OWNERSHIP CHECK IS SERVER-SIDE because the caller cannot be trusted to know: a session working from
+ * a shared token may believe it opened a pull request that it did not, and "I thought it was mine" is not
+ * a reason to discard someone's work.
+ */
+func (t *toolset) prClose(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+	repo, err := required(args, "repo")
+	if err != nil {
+		return extension.ToolResultData{}, err
+	}
+	if err := t.requireRepo(ctx, PermWrite, repo); err != nil {
+		return extension.ToolResultData{}, err
+	}
+	n := argInt(args, "pull_number")
+	if n <= 0 {
+		return extension.ToolResultData{}, errArg(`"pull_number" is required`)
+	}
+	c, _, err := t.clientFor(tenant, args)
+	if err != nil {
+		return extension.ToolResultData{}, err
+	}
+
+	id, _, err := c.IdentityAndScopes(ctx)
+	if err != nil {
+		return extension.ToolResultData{}, errFailed("identify the token: %v", err)
+	}
+	pr, err := c.PR(ctx, n)
+	if err != nil {
+		return extension.ToolResultData{}, errFailed("%s#%d: %v", repo, n, err)
+	}
+	if !strings.EqualFold(pr.Author, id.Login) {
+		// A REFUSAL THAT NAMES THE TOOL TO USE INSTEAD. "not yours" alone leaves the caller to guess
+		// whether the action is impossible or merely misplaced.
+		return extension.ToolResultData{}, &extension.TypedError{
+			Code: easybus.ToolResultErrorCodePermissionDenied,
+			Message: fmt.Sprintf(
+				"%s#%d was opened by %q, not by you (%q). Closing someone else's pull request needs "+
+					"gh-pr-manage, which affects work they depend on and asks for confirmation.",
+				repo, n, pr.Author, id.Login),
+		}
+	}
+
+	closed, err := c.ClosePR(ctx, n)
+	if err != nil {
+		return extension.ToolResultData{}, errFailed("%s#%d: %v", repo, n, err)
+	}
+	return extension.ToolResultData{
+		Content: fmt.Sprintf("closed your pull request #%d WITHOUT merging\n\n%s\n\n"+
+			"The branch and its commits remain. This was your own proposal, so nothing anyone else "+
+			"depended on changed.", closed.Number, closed.HTMLURL),
+		Data: map[string]any{"pr": closed, "closed": "pull_request", "merged": false},
+	}, nil
+}
+
+/**
+ * prManage closes or merges a pull request opened by ANYONE.
+ *
+ * EVERY ACTION HERE AFFECTS SOMEONE ELSE, which is why the whole tool is `medium`: closing discards work
+ * a person is relying on, and merging changes a branch others have built on. Both deserve a confirmation
+ * before they run, and neither belongs beside the tools that act on your own work.
+ *
+ * THE TWO ACTIONS SHARE ONE TOOL because they share a blast radius and an audience. Splitting them would
+ * produce two tools with the same effect and the same permission, differing only in a verb — which is a
+ * distinction the model would have to learn without gaining anything.
+ */
+func (t *toolset) prManage(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
 	repo, err := required(args, "repo")
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -84,21 +156,39 @@ func (t *toolset) prMerge(ctx context.Context, args map[string]any, session, ten
 	if err := t.requireRepo(ctx, PermMaintainer, repo); err != nil {
 		return extension.ToolResultData{}, err
 	}
-	n := argInt(args, "issue_id")
+	n := argInt(args, "pull_number")
 	if n <= 0 {
-		return extension.ToolResultData{}, errArg(`"number" is required`)
+		return extension.ToolResultData{}, errArg(`"pull_number" is required`)
+	}
+	action := strings.TrimSpace(argStr(args, "action"))
+	if action != "close" && action != "merge" {
+		return extension.ToolResultData{}, errArg(`"action" must be "close" or "merge"`)
 	}
 	c, _, err := t.clientFor(tenant, args)
 	if err != nil {
 		return extension.ToolResultData{}, err
 	}
-	pr, err := c.MergePR(ctx, n, argStr(args, "method"), argStr(args, "title"), argStr(args, "message"))
-	if err != nil {
-		return extension.ToolResultData{}, errFailed("%s#%d: %v", repo, n, err)
+
+	if action == "close" {
+		closed, cerr := c.ClosePR(ctx, n)
+		if cerr != nil {
+			return extension.ToolResultData{}, errFailed("%s#%d: %v", repo, n, cerr)
+		}
+		return extension.ToolResultData{
+			Content: fmt.Sprintf("closed pull request #%d WITHOUT merging\n\n%s\n\n"+
+				"This abandons someone's proposal; the branch and its commits still exist.",
+				closed.Number, closed.HTMLURL),
+			Data: map[string]any{"pr": closed, "closed": "pull_request", "merged": false},
+		}, nil
+	}
+
+	merged, merr := c.MergePR(ctx, n, argStr(args, "merge_method"), "", argStr(args, "comment"))
+	if merr != nil {
+		return extension.ToolResultData{}, errFailed("%s#%d: %v", repo, n, merr)
 	}
 	return extension.ToolResultData{
-		Content: fmt.Sprintf("merged #%d\n%s", pr.Number, pr.HTMLURL),
-		Data:    map[string]any{"pr": pr},
+		Content: fmt.Sprintf("merged #%d\n%s", merged.Number, merged.HTMLURL),
+		Data:    map[string]any{"pr": merged},
 	}, nil
 }
 

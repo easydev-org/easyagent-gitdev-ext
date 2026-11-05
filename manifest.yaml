@@ -127,6 +127,23 @@ config:
     required: false
 
 permissions:
+  - key: repo.write
+    label: Write to a repository
+    descriptions:
+      zh: 在仓库中写入
+    # `write`, NOT `destructive`: it covers acting on YOUR OWN work — opening a pull request, closing
+    # your own, commenting. Nothing anyone else depends on changes, so it is the lower tier.
+    risk: write
+    params:
+      - name: repo
+        type: string
+        descriptions:
+          zh: 仓库（owner/name）。
+    descriptions_long:
+      zh: >-
+        允许在仓库中操作**自己**的东西：创建拉取请求、关闭自己开的拉取请求、评论。
+        不包含任何影响他人工作的动作——关闭或合并别人的拉取请求需要 `repo.maintainer`。
+
   - key: repo.maintainer
     label: Maintainer
     descriptions:
@@ -488,21 +505,85 @@ tools:
 
   - name: gh-issue-close
     description: >-
-      Close an issue or pull request. Reports which, and for a pull request says that it was closed
-      WITHOUT merging and the branch still exists. A developer may close only its own; a
-      maintainer may close anyone's.
+      Close an ISSUE. This does not close pull requests — they are proposals, and abandoning one is
+      a different act with a different audience. Use gh-pr-close for your own.
     descriptions:
       zh: >-
-        关闭 issue 或拉取请求。会说明关的是哪种；若是拉取请求，还会说明是**未合并关闭**、分支仍在。
-        开发者只能关自己创建的；负责人可以关任何人的。
+        关闭 **issue**。不会关闭拉取请求——PR 是一种提案，放弃它与关闭 issue 是不同性质的动作，
+        受众也不同。要关自己开的 PR 请用 gh-pr-close。
     input_schema:
       type: object
       properties:
         repo: {type: string, descriptions: {zh: 仓库。}}
-        issue_id: {type: integer, descriptions: {zh: issue 或 PR 的编号。}}
+        issue_id: {type: integer, descriptions: {zh: issue 编号。}}
       required: [repo, issue_id]
+    effect: low
+    requires: [repo.write]
 
-  # ── 拉取请求独有（issue 没有这些动作）─────────────────────────────────────
+  # ── 拉取请求：按「动谁的」分成两个工具 ────────────────────────────────────
+  #
+  # THE SAME VERB, TWO LEVELS. Closing your own pull request abandons your own proposal; closing
+  # someone else's interrupts work they are relying on. Splitting them by WHOSE keeps the effect
+  # honest — a single `gh-pr-close` would have to declare the worse of the two and ask for
+  # confirmation every time you tidy up after yourself.
+  - name: gh-pr-close
+    description: >-
+      Close ONE OF YOUR OWN pull requests without merging it. The branch and its commits remain.
+
+      This refuses a pull request you did not open: use gh-pr-manage for that, which is a heavier
+      action and asks for confirmation.
+    descriptions:
+      zh: >-
+        关闭**你自己开的**拉取请求（不合并）。分支与提交都会保留。
+
+        如果这个 PR 不是你开的，本工具会拒绝——那种情况请用 gh-pr-manage，它是更重的操作，会要求确认。
+    input_schema:
+      type: object
+      properties:
+        repo: {type: string, descriptions: {zh: 仓库。}}
+        pull_number: {type: integer, descriptions: {zh: 拉取请求编号。}}
+        comment:
+          type: string
+          description: Optional closing comment.
+          descriptions: {zh: 可选的关闭说明。}
+      required: [repo, pull_number]
+    effect: low
+    requires: [repo.write]
+
+  - name: gh-pr-manage
+    description: >-
+      Manage pull requests opened by ANYONE: close or merge.
+
+      EVERY ACTION HERE AFFECTS SOMEONE ELSE. Closing discards work a person is relying on; merging
+      changes a branch others have built on. Both ask for confirmation, which is why they live here
+      rather than next to the write-your-own tools.
+    descriptions:
+      zh: >-
+        管理**任何人**开的拉取请求：关闭或合并。
+
+        这里的每个动作都会影响别人。关闭会丢弃他人正在依赖的工作；合并会改动别人已经基于其工作的分支。
+        两者都会要求确认，这也是它们不放在「操作自己的」那组工具里的原因。
+    input_schema:
+      type: object
+      properties:
+        repo: {type: string, descriptions: {zh: 仓库。}}
+        pull_number: {type: integer, descriptions: {zh: 拉取请求编号。}}
+        action:
+          type: string
+          enum: [close, merge]
+          description: close abandons the proposal; merge lands it.
+          descriptions: {zh: close 放弃该提案；merge 将其合入。}
+        comment:
+          type: string
+          description: Optional comment recorded with the action.
+          descriptions: {zh: 随该动作一并记录的说明（可选）。}
+        merge_method:
+          type: string
+          enum: [merge, squash, rebase]
+          description: Only for action=merge.
+          descriptions: {zh: 仅 action=merge 时使用。}
+      required: [repo, pull_number, action]
+    effect: medium
     requires: [repo.maintainer]
 
   - name: gh-pr-create
@@ -522,7 +603,10 @@ tools:
         body: {type: string, descriptions: {zh: PR 描述。}}
         base: {type: string, descriptions: {zh: 目标分支；留空为默认分支。}}
       required: [workspace, repo, title]
-    requires: [repo.maintainer]
+    # OPENING A PROPOSAL IS THE LOWEST WRITE: a new branch and a new pull request, neither of which
+    # anyone depends on. Maintainer is for what touches OTHER people's work.
+    effect: low
+    requires: [repo.write]
 
   - name: gh-pr-files
     description: The files a pull request changes, with per-file counts.
@@ -535,6 +619,8 @@ tools:
         issue_id: {type: integer, descriptions: {zh: 拉取请求的 issue_id。}}
       required: [repo, issue_id]
 
+    effect: none
+
   - name: gh-pr-diff
     description: The whole pull request as one unified diff. Capped at 2000 lines.
     descriptions:
@@ -545,6 +631,8 @@ tools:
         repo: {type: string, descriptions: {zh: 仓库。}}
         issue_id: {type: integer, descriptions: {zh: 拉取请求的 issue_id。}}
       required: [repo, issue_id]
+
+    effect: none
 
   - name: gh-pr-checks
     description: CI status for a pull request.
@@ -557,24 +645,8 @@ tools:
         issue_id: {type: integer, descriptions: {zh: 拉取请求的 issue_id。}}
       required: [repo, issue_id]
 
-  - name: gh-pr-merge
-    description: >-
-      Merge a pull request. THE ONLY ACTION AN ISSUE CANNOT DO. A refused merge is an error, not
-      a success.
-    descriptions:
-      zh: "合并拉取请求。**issue 唯一做不到的动作**。被拒绝的合并会作为错误报告。"
-    input_schema:
-      type: object
-      properties:
-        repo: {type: string, descriptions: {zh: 仓库。}}
-        issue_id: {type: integer, descriptions: {zh: 拉取请求的 issue_id。}}
-        method: {type: string, descriptions: {zh: merge | squash | rebase（默认 merge）。}}
-        title: {type: string, descriptions: {zh: 合并提交标题。}}
-        message: {type: string, descriptions: {zh: 合并提交信息。}}
-      required: [repo, issue_id]
-    requires: [repo.maintainer]
+    effect: none
 
-  # ── 仓库、标签、账户 ────────────────────────────────────────────────────
   - name: gh-info
     description: Repository metadata. No token needed on a public repository.
     descriptions:

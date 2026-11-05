@@ -132,7 +132,7 @@ func main() {
 		{"gh-pr-files", r.stepPRFiles},
 		{"gh-pr-diff", r.stepPRDiff},
 		{"gh-pr-checks", r.stepPRChecks},
-		{"gh-pr-merge", r.stepPRMerge},
+		{"gh-pr-manage", r.stepPRMerge},
 
 		// Issues and comments.
 		{"gh-issue-create", r.stepIssueCreate},
