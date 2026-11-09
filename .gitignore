@@ -14,6 +14,17 @@ ui/dist/
 
 # Built binaries. `go build ./cmd/x` drops the result in the working directory, and an executable
 # committed by accident is that many megabytes for everyone who clones afterwards.
+#
+# `./cmd/e2e-all/<step>` builds to `<step>` in the CURRENT directory, so the e2e helpers need their
+# own rules: `bootstrap` and `seed` were each committed once (28MB together) and then stayed in every
+# tag, which is why they are listed explicitly rather than covered by the paths above.
 /e2e-all
 /gitdev-ext
 /sweep
+/bootstrap
+/seed
+
+# Python bytecode from a local run of the log-stream action. The source is log_stream.py; the
+# .cpython-313.pyc is an artefact of the interpreter that happened to run it, and it was committed.
+**/__pycache__/
+**/*.pyc

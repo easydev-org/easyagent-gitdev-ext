@@ -1,0 +1,22 @@
+# Keep the build context to source only. `COPY . .` sends everything here to the daemon, so a stale
+# build output left in the tree inflates every image build (and, before the .gitignore fix, the
+# binaries were also part of the checkout at 27MB).
+#
+# These are the same paths .gitignore covers. They are repeated rather than shared because Docker
+# does not read .gitignore, and an image that quietly embeds `./bootstrap` would ship a second
+# executable nobody asked for.
+/bootstrap
+/seed
+/e2e-all
+/gitdev-ext
+/sweep
+
+.git
+ui/node_modules
+ui/dist
+cmd/gitdev-ext/ui/dist
+cmd/gitdev-ext/ui/.version
+
+# Python bytecode a local e2e run leaves behind.
+**/__pycache__
+**/*.pyc
